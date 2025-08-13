@@ -1,6 +1,68 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { DatabaseService } from "@/lib/database"
 
+function extractAgentName(chatData: any, lastMessage: any): string {
+  console.log("🔍 === EXTRAINDO NOME DO AGENTE ===")
+  console.log("📊 LastOrganizationMember:", JSON.stringify(chatData.LastOrganizationMember, null, 2))
+  console.log("📊 OrganizationMembers:", JSON.stringify(chatData.OrganizationMembers, null, 2))
+  console.log("📊 Setor:", chatData.Setor)
+
+  // 1. Tentar usar LastOrganizationMember.Id para buscar em OrganizationMembers
+  if (chatData.LastOrganizationMember?.Id && chatData.OrganizationMembers) {
+    const memberId = chatData.LastOrganizationMember.Id
+    console.log("🔍 Procurando membro com ID:", memberId)
+
+    const member = chatData.OrganizationMembers.find((m: any) => m.Id === memberId)
+    if (member) {
+      console.log("✅ Membro encontrado:", JSON.stringify(member, null, 2))
+
+      // Tentar Name primeiro, depois DisplayName
+      if (member.Name) {
+        console.log("✅ Nome do agente encontrado:", member.Name)
+        return member.Name
+      }
+      if (member.DisplayName) {
+        console.log("✅ DisplayName do agente encontrado:", member.DisplayName)
+        return member.DisplayName
+      }
+
+      // Se não tem nome, usar ID como fallback
+      console.log("⚠️ Membro sem nome, usando ID como fallback")
+      return `Agente-${member.Id}`
+    }
+  }
+
+  // 2. Fallback: usar Setor se disponível
+  if (chatData.Setor && typeof chatData.Setor === "string" && chatData.Setor.trim()) {
+    console.log("✅ Usando Setor como nome do agente:", chatData.Setor)
+    return chatData.Setor
+  }
+
+  // 3. Fallback: primeiro membro disponível em OrganizationMembers
+  if (chatData.OrganizationMembers && chatData.OrganizationMembers.length > 0) {
+    const firstMember = chatData.OrganizationMembers[0]
+    if (firstMember.Name) {
+      console.log("✅ Usando primeiro membro disponível:", firstMember.Name)
+      return firstMember.Name
+    }
+    if (firstMember.DisplayName) {
+      console.log("✅ Usando DisplayName do primeiro membro:", firstMember.DisplayName)
+      return firstMember.DisplayName
+    }
+    console.log("⚠️ Usando ID do primeiro membro como fallback")
+    return `Agente-${firstMember.Id}`
+  }
+
+  // 4. Fallback final: usar ID se disponível
+  if (chatData.LastOrganizationMember?.Id) {
+    console.log("⚠️ Usando LastOrganizationMember.Id como fallback final")
+    return `Agente-${chatData.LastOrganizationMember.Id}`
+  }
+
+  console.log("❌ Nenhuma informação de agente encontrada, usando fallback genérico")
+  return "Sistema"
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -35,10 +97,12 @@ export async function POST(request: NextRequest) {
       console.log("📝 lastMessage:", JSON.stringify(lastMessage, null, 2))
       console.log("👤 chatData.Contact:", JSON.stringify(chatData.Contact, null, 2))
       console.log("🎧 chatData.OrganizationMember:", JSON.stringify(chatData.OrganizationMember, null, 2))
+      console.log("🎧 chatData.LastOrganizationMember:", JSON.stringify(chatData.LastOrganizationMember, null, 2))
+      console.log("👥 chatData.OrganizationMembers:", JSON.stringify(chatData.OrganizationMembers, null, 2))
 
       const conversation_id = chatData.Id
       const customer_name = chatData.Contact?.Name || "Cliente"
-      const customer_phone = chatData.Contact?.Phone || null
+      const customer_phone = chatData.Contact?.PhoneNumber || null
       const customer_email = chatData.Contact?.Email || null
 
       const sourceValue = (lastMessage.Source || "").toLowerCase().trim()
@@ -51,30 +115,23 @@ export async function POST(request: NextRequest) {
       } else if (sourceValue === "agent" || sourceValue === "member" || sourceValue === "organizationmember") {
         sender_type = "agent"
       } else {
-        // Fallback simples
-        sender_type = lastMessage.Member?.Name ? "agent" : "customer"
+        sender_type = chatData.LastOrganizationMember?.Id ? "agent" : "customer"
       }
 
       console.log("📊 sender_type determinado:", sender_type)
 
-      let agent_name: string
-      let sender_name: string
+      const agent_name = extractAgentName(chatData, lastMessage)
 
+      let sender_name: string
       if (sender_type === "agent") {
         // Para mensagens de agente: quem enviou é o atendente
-        agent_name =
-          lastMessage.Member?.Name ||
-          lastMessage.Member?.DisplayName ||
-          chatData.OrganizationMember?.Name ||
-          "Atendente"
         sender_name = agent_name
       } else {
-        // Para mensagens de cliente: agente responsável pela conversa
-        agent_name = chatData.OrganizationMember?.Name || chatData.OrganizationMember?.DisplayName || "Sistema"
+        // Para mensagens de cliente: sender é o cliente
         sender_name = customer_name
       }
 
-      console.log("✅ === RESULTADO FINAL SIMPLIFICADO ===")
+      console.log("✅ === RESULTADO FINAL MELHORADO ===")
       console.log(`📊 sender_type: "${sender_type}"`)
       console.log(`👤 sender_name: "${sender_name}"`)
       console.log(`🎧 agent_name: "${agent_name}"`)
@@ -173,7 +230,6 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Resto do código permanece igual para outros tipos de evento...
     if (Type === "ChatClosed") {
       const conversation_id = Payload.Content.Id
       await DatabaseService.updateConversationStatus(conversation_id, "closed")
@@ -189,7 +245,7 @@ export async function POST(request: NextRequest) {
 
     if (Type === "MemberTransfer") {
       const conversation_id = Payload.Content.Id
-      const new_agent = Payload.Content.OrganizationMember?.Name || "Sistema"
+      const new_agent = extractAgentName(Payload.Content, null)
       await DatabaseService.updateConversationAgent(conversation_id, new_agent)
       console.log(`✅ Transferência processada - Conversa: ${conversation_id}, Novo agente: ${new_agent}`)
       return NextResponse.json({
