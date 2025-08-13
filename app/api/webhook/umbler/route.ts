@@ -1,31 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { DatabaseService } from "@/lib/database"
 
-function parseChannelAttendant(fullName: string): { channel: string | null; attendantName: string; fullName: string } {
-  const channelPattern = /^([^-]+)\s*-\s*(.+)$/
-  const match = fullName.match(channelPattern)
-
-  if (match) {
-    const channel = match[1].trim()
-    const attendantName = match[2].trim()
-    return {
-      channel,
-      attendantName,
-      fullName: fullName.trim(),
-    }
-  }
-
-  return {
-    channel: null,
-    attendantName: fullName.trim(),
-    fullName: fullName.trim(),
-  }
-}
-
-function extractAgentInfo(
-  chatData: any,
-  lastMessage: any,
-): { name: string; id: string | null; channel: string | null; attendantName: string } {
+function extractAgentInfo(chatData: any, lastMessage: any): { name: string; id: string | null } {
   // 1. Try LastOrganizationMember.Id in OrganizationMembers array
   if (chatData.LastOrganizationMember?.Id && chatData.OrganizationMembers?.length > 0) {
     const memberId = chatData.LastOrganizationMember.Id
@@ -33,38 +9,29 @@ function extractAgentInfo(
     if (member) {
       const agentName = member.Name || member.DisplayName
       if (agentName && agentName.trim()) {
-        const parsed = parseChannelAttendant(agentName)
         return {
-          name: parsed.fullName,
+          name: agentName.trim(),
           id: memberId,
-          channel: parsed.channel,
-          attendantName: parsed.attendantName,
         }
       }
     }
-    return { name: `Agente-${memberId}`, id: memberId, channel: null, attendantName: `Agente-${memberId}` }
+    return { name: `Agente-${memberId}`, id: memberId }
   }
 
   // 2. Try message sender for agent messages
   if (lastMessage.Source?.toLowerCase() === "agent" || lastMessage.Source?.toLowerCase() === "member") {
     if (lastMessage.Sender?.Name) {
       const senderId = lastMessage.Sender?.Id || null
-      const parsed = parseChannelAttendant(lastMessage.Sender.Name)
       return {
-        name: parsed.fullName,
+        name: lastMessage.Sender.Name.trim(),
         id: senderId,
-        channel: parsed.channel,
-        attendantName: parsed.attendantName,
       }
     }
     if (lastMessage.Sender?.DisplayName) {
       const senderId = lastMessage.Sender?.Id || null
-      const parsed = parseChannelAttendant(lastMessage.Sender.DisplayName)
       return {
-        name: parsed.fullName,
+        name: lastMessage.Sender.DisplayName.trim(),
         id: senderId,
-        channel: parsed.channel,
-        attendantName: parsed.attendantName,
       }
     }
   }
@@ -76,26 +43,20 @@ function extractAgentInfo(
       const member = chatData.OrganizationMembers.find((m: any) => m.Id === memberId)
       if (member && (member.Name || member.DisplayName)) {
         const agentName = member.Name || member.DisplayName
-        const parsed = parseChannelAttendant(agentName)
         return {
-          name: parsed.fullName,
+          name: agentName.trim(),
           id: memberId,
-          channel: parsed.channel,
-          attendantName: parsed.attendantName,
         }
       }
     }
-    return { name: `Agente-${memberId}`, id: memberId, channel: null, attendantName: `Agente-${memberId}` }
+    return { name: `Agente-${memberId}`, id: memberId }
   }
 
   // 4. Try Setor field
   if (chatData.Setor && typeof chatData.Setor === "string" && chatData.Setor.trim()) {
-    const parsed = parseChannelAttendant(chatData.Setor)
     return {
-      name: parsed.fullName,
+      name: chatData.Setor.trim(),
       id: null,
-      channel: parsed.channel,
-      attendantName: parsed.attendantName,
     }
   }
 
@@ -105,17 +66,14 @@ function extractAgentInfo(
     const agentName = firstMember.Name || firstMember.DisplayName
     const agentId = firstMember.Id
     if (agentName && agentName.trim()) {
-      const parsed = parseChannelAttendant(agentName)
       return {
-        name: parsed.fullName,
+        name: agentName.trim(),
         id: agentId || null,
-        channel: parsed.channel,
-        attendantName: parsed.attendantName,
       }
     }
   }
 
-  return { name: "Atendente", id: null, channel: null, attendantName: "Atendente" }
+  return { name: "Atendente", id: null }
 }
 
 function detectAndProcessTags(messageText: string, chatData: any): string[] {
@@ -126,12 +84,6 @@ function detectAndProcessTags(messageText: string, chatData: any): string[] {
   const tagAddedMatch = messageText.match(tagAddedPattern)
   if (tagAddedMatch) {
     detectedTags.push(tagAddedMatch[1].trim())
-  }
-
-  const tagRemovedPattern = /etiqueta removida da conversa[:\s]*([^.\n]+)/i
-  const tagRemovedMatch = messageText.match(tagRemovedPattern)
-  if (tagRemovedMatch) {
-    detectedTags.push(`REMOVE:${tagRemovedMatch[1].trim()}`)
   }
 
   // Check chatData.Tags
@@ -149,12 +101,7 @@ function detectAndProcessTags(messageText: string, chatData: any): string[] {
 async function processTags(conversationId: string, tags: string[]) {
   for (const tag of tags) {
     try {
-      if (tag.startsWith("REMOVE:")) {
-        const tagToRemove = tag.replace("REMOVE:", "")
-        await DatabaseService.removeTagFromConversation(conversationId, tagToRemove)
-      } else {
-        await DatabaseService.addTagToConversation(conversationId, tag)
-      }
+      await DatabaseService.addTagToConversation(conversationId, tag)
     } catch (error) {
       console.error(`Erro ao processar tag "${tag}":`, error)
     }
@@ -200,7 +147,7 @@ export async function POST(request: NextRequest) {
         sender_type = sourceValue.includes("member") || sourceValue.includes("agent") ? "agent" : "customer"
       }
 
-      // Extract agent information
+      // Extract agent information - simplified
       const agentInfo = extractAgentInfo(chatData, lastMessage)
       const agent_name = agentInfo.name
       const agent_id = agentInfo.id
@@ -270,7 +217,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      console.log(`✅ Mensagem processada - Conversa: ${conversation_id}, Sender: ${sender_type}, Agent: ${agent_name}`)
+      console.log(`✅ Mensagem processada - Conversa: ${conversation_id}, Agent: ${agent_name} (ID: ${agent_id})`)
 
       return NextResponse.json({
         success: true,
@@ -308,7 +255,9 @@ export async function POST(request: NextRequest) {
       const new_agent_id = agentInfo.id
 
       await DatabaseService.updateConversationAgent(conversation_id, new_agent, new_agent_id)
-      console.log(`✅ Transferência processada - Conversa: ${conversation_id}, Novo agente: ${new_agent}`)
+      console.log(
+        `✅ Transferência processada - Conversa: ${conversation_id}, Novo agente: ${new_agent} (ID: ${new_agent_id})`,
+      )
       return NextResponse.json({
         success: true,
         message: "Transferência processada",
