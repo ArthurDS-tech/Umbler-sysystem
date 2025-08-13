@@ -35,10 +35,11 @@ export async function POST(request: NextRequest) {
       console.log("📝 lastMessage:", JSON.stringify(lastMessage, null, 2))
       console.log("👤 chatData.Contact:", JSON.stringify(chatData.Contact, null, 2))
       console.log("🎧 chatData.OrganizationMember:", JSON.stringify(chatData.OrganizationMember, null, 2))
+      console.log("👥 chatData.OrganizationMembers:", JSON.stringify(chatData.OrganizationMembers, null, 2))
 
       const conversation_id = chatData.Id
       const customer_name = chatData.Contact?.Name || "Cliente"
-      const customer_phone = chatData.Contact?.Phone || null
+      const customer_phone = chatData.Contact?.PhoneNumber || null
       const customer_email = chatData.Contact?.Email || null
 
       const sourceValue = (lastMessage.Source || "").toLowerCase().trim()
@@ -46,13 +47,28 @@ export async function POST(request: NextRequest) {
       console.log("📊 Source processado:", sourceValue)
 
       let sender_type: "customer" | "agent"
+      
+      // Lógica mais robusta para determinar o tipo de remetente
       if (sourceValue === "contact" || sourceValue === "customer") {
         sender_type = "customer"
+        console.log("📊 Remetente identificado como CLIENTE pelo Source")
       } else if (sourceValue === "agent" || sourceValue === "member" || sourceValue === "organizationmember") {
         sender_type = "agent"
+        console.log("📊 Remetente identificado como AGENTE pelo Source")
       } else {
-        // Fallback simples
-        sender_type = lastMessage.Member?.Name ? "agent" : "customer"
+        // Fallback mais inteligente baseado na estrutura do webhook
+        // Se não temos Source claro, verificar se há informações de agente
+        const hasAgentInfo = chatData.LastOrganizationMember?.Id || 
+                           chatData.OrganizationMember?.Id ||
+                           chatData.OrganizationMembers?.length > 0
+        
+        if (hasAgentInfo && sourceValue !== "contact") {
+          sender_type = "agent"
+          console.log("📊 Remetente identificado como AGENTE por fallback (estrutura)")
+        } else {
+          sender_type = "customer"
+          console.log("📊 Remetente identificado como CLIENTE por fallback")
+        }
       }
 
       console.log("📊 sender_type determinado:", sender_type)
@@ -60,17 +76,39 @@ export async function POST(request: NextRequest) {
       let agent_name: string
       let sender_name: string
 
+      // Função para extrair nome do agente da estrutura correta
+      const extractAgentName = () => {
+        // Tentar extrair do LastOrganizationMember se disponível
+        if (chatData.LastOrganizationMember?.Id) {
+          // Buscar nos OrganizationMembers pelo ID
+          const member = chatData.OrganizationMembers?.find(
+            (m: any) => m.Id === chatData.LastOrganizationMember?.Id
+          )
+          if (member?.Name || member?.DisplayName) {
+            return member.Name || member.DisplayName
+          }
+        }
+        
+        // Fallback para OrganizationMember se disponível
+        if (chatData.OrganizationMember?.Name || chatData.OrganizationMember?.DisplayName) {
+          return chatData.OrganizationMember.Name || chatData.OrganizationMember.DisplayName
+        }
+        
+        // Se não conseguir extrair, usar um nome padrão baseado no setor
+        if (chatData.Sector?.Name) {
+          return `Atendente ${chatData.Sector.Name}`
+        }
+        
+        return "Atendente"
+      }
+
       if (sender_type === "agent") {
         // Para mensagens de agente: quem enviou é o atendente
-        agent_name =
-          lastMessage.Member?.Name ||
-          lastMessage.Member?.DisplayName ||
-          chatData.OrganizationMember?.Name ||
-          "Atendente"
+        agent_name = extractAgentName()
         sender_name = agent_name
       } else {
         // Para mensagens de cliente: agente responsável pela conversa
-        agent_name = chatData.OrganizationMember?.Name || chatData.OrganizationMember?.DisplayName || "Sistema"
+        agent_name = extractAgentName()
         sender_name = customer_name
       }
 
@@ -189,7 +227,10 @@ export async function POST(request: NextRequest) {
 
     if (Type === "MemberTransfer") {
       const conversation_id = Payload.Content.Id
-      const new_agent = Payload.Content.OrganizationMember?.Name || "Sistema"
+      // Corrigir para usar a estrutura correta
+      const new_agent = Payload.Content.OrganizationMember?.Name || 
+                       Payload.Content.OrganizationMember?.DisplayName ||
+                       "Sistema"
       await DatabaseService.updateConversationAgent(conversation_id, new_agent)
       console.log(`✅ Transferência processada - Conversa: ${conversation_id}, Novo agente: ${new_agent}`)
       return NextResponse.json({
