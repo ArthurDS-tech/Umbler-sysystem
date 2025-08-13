@@ -1,111 +1,73 @@
-// Script para testar o webhook da Umbler
-const webhookUrl = "http://localhost:3000/api/webhook/umbler"
+#!/usr/bin/env node
 
-// Exemplo de payload da Umbler - Mensagem do cliente
-const messagePayload = {
-  Type: "Message",
-  EventDate: "2024-02-07T18:44:01.3135533Z",
-  Payload: {
-    Type: "Chat",
-    Content: {
-      Id: "chat_123456",
-      Contact: {
-        Name: "João Silva",
-        Phone: "+5511999999999",
-        Email: "joao@email.com",
-      },
-      OrganizationMember: {
-        Name: "Maria Atendente",
-      },
-      LastMessage: {
-        Id: "msg_001",
-        Content: "Olá, preciso de ajuda com meu pedido",
-        Source: "contact",
-        IsPrivate: false,
-      },
-    },
-  },
-  EventId: "ZcPPcWpimiD3EiER",
-}
+/**
+ * Script de teste para o webhook da Umbler
+ * Simula os dados que seriam enviados pelo webhook
+ */
 
-// Exemplo de resposta do agente
-const agentResponsePayload = {
-  Type: "Message",
-  EventDate: "2024-02-07T18:46:15.1234567Z",
-  Payload: {
-    Type: "Chat",
-    Content: {
-      Id: "chat_123456",
-      Contact: {
-        Name: "João Silva",
-        Phone: "+5511999999999",
-        Email: "joao@email.com",
-      },
-      OrganizationMember: {
-        Name: "Maria Atendente",
-      },
-      LastMessage: {
-        Id: "msg_002",
-        Content: "Olá João! Claro, vou te ajudar. Qual é o número do seu pedido?",
-        Source: "member",
-        IsPrivate: false,
-      },
-    },
-  },
-  EventId: "AbCdEfGhIjKlMnOp",
-}
-
-// Exemplo de chat fechado
-const chatClosedPayload = {
-  Type: "ChatClosed",
-  EventDate: "2024-02-07T19:00:00.0000000Z",
-  Payload: {
-    Type: "Chat",
-    Content: {
-      Id: "chat_123456",
-    },
-  },
-  EventId: "ChatClosed123",
-}
-
-async function testWebhook(payload, description) {
-  console.log(`\n🧪 Testando: ${description}`)
-  console.log("Payload:", JSON.stringify(payload, null, 2))
-
+const testWebhook = async () => {
+  const webhookUrl = process.env.WEBHOOK_URL || 'http://localhost:3000/api/webhook/umbler'
+  
+  console.log('🧪 Testando webhook da Umbler...')
+  console.log(`📍 URL: ${webhookUrl}`)
+  
+  // Dados de teste simulando uma mensagem de cliente
+  const testData = {
+    Type: "Message",
+    EventDate: new Date().toISOString(),
+    EventId: "test_" + Date.now(),
+    Payload: {
+      Type: "Chat",
+      Content: {
+        Id: "test_conversation_" + Date.now(),
+        Contact: {
+          Name: "Cliente Teste",
+          Phone: "+5511999999999",
+          Email: "teste@exemplo.com"
+        },
+        OrganizationMember: {
+          Name: "Agente Teste",
+          DisplayName: "Agente Teste"
+        },
+        LastMessage: {
+          Id: "test_message_" + Date.now(),
+          Content: "Olá, vim do site do marcelino",
+          Source: "contact",
+          IsPrivate: false,
+          Member: null
+        }
+      }
+    }
+  }
+  
   try {
+    console.log('\n📤 Enviando dados de teste...')
+    console.log('📝 Dados:', JSON.stringify(testData, null, 2))
+    
     const response = await fetch(webhookUrl, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(testData)
     })
-
+    
     const result = await response.json()
-    console.log(`✅ Status: ${response.status}`)
-    console.log("Resposta:", JSON.stringify(result, null, 2))
+    
+    console.log('\n📥 Resposta recebida:')
+    console.log('📊 Status:', response.status)
+    console.log('📝 Dados:', JSON.stringify(result, null, 2))
+    
+    if (response.ok && result.success) {
+      console.log('\n✅ Webhook funcionando corretamente!')
+    } else {
+      console.log('\n❌ Webhook com problemas!')
+    }
+    
   } catch (error) {
-    console.error(`❌ Erro:`, error.message)
+    console.error('\n💥 Erro ao testar webhook:', error.message)
   }
 }
 
-async function runTests() {
-  console.log("🚀 Iniciando testes do webhook da Umbler...")
-
-  // Teste 1: Mensagem do cliente
-  await testWebhook(messagePayload, "Mensagem do cliente")
-
-  // Aguardar um pouco antes da próxima mensagem
-  await new Promise((resolve) => setTimeout(resolve, 2000))
-
-  // Teste 2: Resposta do agente (deve calcular tempo de resposta)
-  await testWebhook(agentResponsePayload, "Resposta do agente")
-
-  // Teste 3: Chat fechado
-  await testWebhook(chatClosedPayload, "Chat fechado")
-
-  console.log("\n✨ Testes concluídos!")
-}
-
-// Executar testes
-runTests().catch(console.error)
+// Executar teste
+testWebhook()
