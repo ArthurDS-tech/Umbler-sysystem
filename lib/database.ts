@@ -11,6 +11,7 @@ export interface Conversation {
   agent_name?: string
   status: string
   is_site_customer?: boolean // Adicionar flag para cliente do site
+  tags?: string[] // Adicionar tags
   created_at: Date
   updated_at: Date
 }
@@ -46,10 +47,11 @@ export class DatabaseService {
     customer_email?: string
     agent_name?: string
     is_site_customer?: boolean // Adicionar parâmetro
+    tags?: string[] // Adicionar parâmetro
   }) {
     const result = await sql`
-      INSERT INTO conversations (conversation_id, customer_name, customer_phone, customer_email, agent_name, is_site_customer, updated_at)
-      VALUES (${data.conversation_id}, ${data.customer_name}, ${data.customer_phone}, ${data.customer_email}, ${data.agent_name}, ${data.is_site_customer || false}, NOW())
+      INSERT INTO conversations (conversation_id, customer_name, customer_phone, customer_email, agent_name, is_site_customer, tags, updated_at)
+      VALUES (${data.conversation_id}, ${data.customer_name}, ${data.customer_phone}, ${data.customer_email}, ${data.agent_name}, ${data.is_site_customer || false}, ${data.tags || []}, NOW())
       ON CONFLICT (conversation_id) 
       DO UPDATE SET 
         customer_name = COALESCE(EXCLUDED.customer_name, conversations.customer_name),
@@ -57,6 +59,7 @@ export class DatabaseService {
         customer_email = COALESCE(EXCLUDED.customer_email, conversations.customer_email),
         agent_name = COALESCE(EXCLUDED.agent_name, conversations.agent_name),
         is_site_customer = COALESCE(EXCLUDED.is_site_customer, conversations.is_site_customer),
+        tags = array_append(conversations.tags, EXCLUDED.tags),
         updated_at = NOW()
       RETURNING *
     `
@@ -249,6 +252,7 @@ export class DatabaseService {
     const result = await sql`
       SELECT 
         c.*,
+        COALESCE(c.tags, '{}') as tags,
         COUNT(m.id) as total_messages,
         COUNT(CASE WHEN m.sender_type = 'customer' THEN 1 END) as customer_messages,
         COUNT(CASE WHEN m.sender_type = 'agent' THEN 1 END) as agent_messages,
@@ -258,7 +262,7 @@ export class DatabaseService {
       FROM conversations c
       LEFT JOIN messages m ON c.conversation_id = m.conversation_id
       LEFT JOIN response_times rt ON c.conversation_id = rt.conversation_id
-      GROUP BY c.id, c.conversation_id, c.customer_name, c.customer_phone, c.customer_email, c.agent_name, c.status, c.is_site_customer, c.created_at, c.updated_at
+      GROUP BY c.id, c.conversation_id, c.customer_name, c.customer_phone, c.customer_email, c.agent_name, c.status, c.is_site_customer, c.created_at, c.updated_at, c.tags
       ORDER BY c.updated_at DESC
     `
     return result
@@ -320,6 +324,7 @@ export class DatabaseService {
     const result = await sql`
       SELECT 
         c.*,
+        COALESCE(c.tags, '{}') as tags,
         COUNT(m.id) as total_messages,
         COUNT(CASE WHEN m.sender_type = 'customer' THEN 1 END) as customer_messages,
         COUNT(CASE WHEN m.sender_type = 'agent' THEN 1 END) as agent_messages,
@@ -330,7 +335,7 @@ export class DatabaseService {
       LEFT JOIN messages m ON c.conversation_id = m.conversation_id
       LEFT JOIN response_times rt ON c.conversation_id = rt.conversation_id
       WHERE c.is_site_customer = true
-      GROUP BY c.id, c.conversation_id, c.customer_name, c.customer_phone, c.customer_email, c.agent_name, c.status, c.is_site_customer, c.created_at, c.updated_at
+      GROUP BY c.id, c.conversation_id, c.customer_name, c.customer_phone, c.customer_email, c.agent_name, c.status, c.is_site_customer, c.created_at, c.updated_at, c.tags
       ORDER BY c.updated_at DESC
     `
     return result
@@ -342,7 +347,8 @@ export class DatabaseService {
         m.*,
         c.customer_name,
         c.agent_name,
-        c.is_site_customer
+        c.is_site_customer,
+        COALESCE(c.tags, '{}') as tags
       FROM messages m
       LEFT JOIN conversations c ON m.conversation_id = c.conversation_id
       ORDER BY m.timestamp DESC
@@ -364,5 +370,34 @@ export class DatabaseService {
       WHERE c.is_site_customer = true
     `
     return result[0]
+  }
+
+  static async addTagToConversation(conversationId: string, tag: string) {
+    const result = await sql`
+      UPDATE conversations 
+      SET tags = array_append(tags, ${tag}), updated_at = NOW()
+      WHERE conversation_id = ${conversationId} 
+      AND NOT (${tag} = ANY(tags))
+      RETURNING *
+    `
+    return result[0] as Conversation
+  }
+
+  static async removeTagFromConversation(conversationId: string, tag: string) {
+    const result = await sql`
+      UPDATE conversations 
+      SET tags = array_remove(tags, ${tag}), updated_at = NOW()
+      WHERE conversation_id = ${conversationId}
+      RETURNING *
+    `
+    return result[0] as Conversation
+  }
+
+  static async getConversationTags(conversationId: string) {
+    const result = await sql`
+      SELECT tags FROM conversations 
+      WHERE conversation_id = ${conversationId}
+    `
+    return result[0]?.tags || []
   }
 }

@@ -67,6 +67,60 @@ function extractAgentName(chatData: any, lastMessage: any): string {
   return "Atendente"
 }
 
+function detectAndProcessTags(messageText: string, conversationId: string, chatData: any): string[] {
+  const detectedTags: string[] = []
+
+  // Fixed function to accept chatData parameter
+  // Detect tag addition messages from Umbler system
+  const tagAddedPattern = /etiqueta adicionada na conversa[:\s]*([^.\n]+)/i
+  const tagAddedMatch = messageText.match(tagAddedPattern)
+
+  if (tagAddedMatch) {
+    const tagName = tagAddedMatch[1].trim()
+    console.log(`🏷️ Tag detectada: "${tagName}" na conversa ${conversationId}`)
+    detectedTags.push(tagName)
+  }
+
+  // Detect tag removal messages from Umbler system
+  const tagRemovedPattern = /etiqueta removida da conversa[:\s]*([^.\n]+)/i
+  const tagRemovedMatch = messageText.match(tagRemovedPattern)
+
+  if (tagRemovedMatch) {
+    const tagName = tagRemovedMatch[1].trim()
+    console.log(`🏷️ Tag removida: "${tagName}" da conversa ${conversationId}`)
+    detectedTags.push(`REMOVE:${tagName}`)
+  }
+
+  // Also check for tags in the chatData.Tags field if available
+  if (chatData.Tags && Array.isArray(chatData.Tags)) {
+    chatData.Tags.forEach((tag: string) => {
+      if (tag && tag.trim()) {
+        console.log(`🏷️ Tag do chatData: "${tag}" na conversa ${conversationId}`)
+        detectedTags.push(tag.trim())
+      }
+    })
+  }
+
+  return detectedTags
+}
+
+async function processTags(conversationId: string, tags: string[]) {
+  for (const tag of tags) {
+    try {
+      if (tag.startsWith("REMOVE:")) {
+        const tagToRemove = tag.replace("REMOVE:", "")
+        await DatabaseService.removeTagFromConversation(conversationId, tagToRemove)
+        console.log(`✅ Tag removida: "${tagToRemove}" da conversa ${conversationId}`)
+      } else {
+        await DatabaseService.addTagToConversation(conversationId, tag)
+        console.log(`✅ Tag adicionada: "${tag}" à conversa ${conversationId}`)
+      }
+    } catch (error) {
+      console.error(`❌ Erro ao processar tag "${tag}":`, error)
+    }
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -101,6 +155,7 @@ export async function POST(request: NextRequest) {
       console.log("📝 lastMessage:", JSON.stringify(lastMessage, null, 2))
       console.log("👤 chatData.Contact:", JSON.stringify(chatData.Contact, null, 2))
       console.log("🎧 chatData.OrganizationMember:", JSON.stringify(chatData.OrganizationMember, null, 2))
+      console.log("🏷️ chatData.Tags:", JSON.stringify(chatData.Tags, null, 2))
 
       const conversation_id = chatData.Id
       const customer_name = chatData.Contact?.Name || "Cliente"
@@ -146,7 +201,11 @@ export async function POST(request: NextRequest) {
       console.log("📝 Mensagem:", message_text.substring(0, 100))
       console.log("🔍 É cliente do site?", isSiteCustomer ? "✅ SIM" : "❌ NÃO")
 
-      // Criar ou atualizar conversa
+      console.log("🏷️ === PROCESSAMENTO DE ETIQUETAS ===")
+      // Fixed function call to pass chatData parameter
+      const detectedTags = detectAndProcessTags(message_text, conversation_id, chatData)
+      console.log(`🏷️ Tags detectadas: ${detectedTags.length > 0 ? detectedTags.join(", ") : "Nenhuma"}`)
+
       await DatabaseService.createOrUpdateConversation({
         conversation_id,
         customer_name,
@@ -155,6 +214,10 @@ export async function POST(request: NextRequest) {
         agent_name,
         is_site_customer: isSiteCustomer,
       })
+
+      if (detectedTags.length > 0) {
+        await processTags(conversation_id, detectedTags)
+      }
 
       const message_id = lastMessage.Id || EventId
       const message_type = lastMessage.IsPrivate ? "private_note" : "message"
@@ -172,7 +235,6 @@ export async function POST(request: NextRequest) {
 
       console.log("💾 Mensagem salva no banco:", savedMessage ? "✅ Sucesso" : "❌ Falhou")
 
-      // Cálculo de tempo de resposta (mantido igual)
       if (sender_type === "agent" && !lastMessage.IsPrivate) {
         console.log("⏱️ === CALCULANDO TEMPO DE RESPOSTA ===")
         console.log(`📝 Mensagem do agente: ${sender_name}`)
@@ -215,7 +277,7 @@ export async function POST(request: NextRequest) {
       }
 
       console.log(
-        `🎉 Mensagem processada - Conversa: ${conversation_id}, Sender: ${sender_type}, Site Customer: ${isSiteCustomer}`,
+        `🎉 Mensagem processada - Conversa: ${conversation_id}, Sender: ${sender_type}, Site Customer: ${isSiteCustomer}, Tags: ${detectedTags.length}`,
       )
 
       return NextResponse.json({
@@ -227,12 +289,12 @@ export async function POST(request: NextRequest) {
         sender_name,
         agent_name,
         is_site_customer: isSiteCustomer,
+        detected_tags: detectedTags,
         event_id: EventId,
         processed_at: new Date().toISOString(),
       })
     }
 
-    // Resto do código permanece igual para outros tipos de evento...
     if (Type === "ChatClosed") {
       const conversation_id = Payload.Content.Id
       await DatabaseService.updateConversationStatus(conversation_id, "closed")
