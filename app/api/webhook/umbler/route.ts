@@ -1,113 +1,154 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { DatabaseService } from "@/lib/database"
 
-function extractAgentInfo(chatData: any, lastMessage: any): { name: string; id: string | null } {
-  console.log("🔍 === EXTRACTING AGENT INFO (NAME + ID) ===")
-  console.log("📊 LastOrganizationMember:", JSON.stringify(chatData.LastOrganizationMember, null, 2))
-  console.log("📊 OrganizationMembers:", JSON.stringify(chatData.OrganizationMembers, null, 2))
-  console.log("📊 OrganizationMember:", JSON.stringify(chatData.OrganizationMember, null, 2))
-  console.log("📊 Setor:", chatData.Setor)
-
-  // 1. Try to get agent from LastOrganizationMember.Id in OrganizationMembers array
-  if (chatData.LastOrganizationMember?.Id && chatData.OrganizationMembers?.length > 0) {
-    const memberId = chatData.LastOrganizationMember.Id
-    const member = chatData.OrganizationMembers.find((m: any) => m.Id === memberId)
-    if (member) {
-      const agentName = member.Name || member.DisplayName
-      if (agentName && agentName.trim()) {
-        console.log(`✅ Agent found by LastOrganizationMember.Id: ${agentName} (ID: ${memberId})`)
-        return { name: agentName.trim(), id: memberId }
-      }
-    }
-    // Even if no name found, we have the ID
-    console.log(`⚠️ Agent ID found but no name: ${memberId}`)
-    return { name: `Agente-${memberId}`, id: memberId }
-  }
-
-  // 2. Try to get agent from message sender (for agent messages)
-  if (lastMessage.Source?.toLowerCase() === "agent" || lastMessage.Source?.toLowerCase() === "member") {
-    if (lastMessage.Sender?.Name) {
-      const senderId = lastMessage.Sender?.Id || null
-      console.log(`✅ Agent found from message sender: ${lastMessage.Sender.Name} (ID: ${senderId})`)
-      return { name: lastMessage.Sender.Name.trim(), id: senderId }
-    }
-    if (lastMessage.Sender?.DisplayName) {
-      const senderId = lastMessage.Sender?.Id || null
-      console.log(`✅ Agent found from message sender DisplayName: ${lastMessage.Sender.DisplayName} (ID: ${senderId})`)
-      return { name: lastMessage.Sender.DisplayName.trim(), id: senderId }
-    }
-  }
-
-  // 3. Try OrganizationMember.Id (single member)
-  if (chatData.OrganizationMember?.Id) {
-    const memberId = chatData.OrganizationMember.Id
-    // Try to find name in OrganizationMembers array
-    if (chatData.OrganizationMembers?.length > 0) {
-      const member = chatData.OrganizationMembers.find((m: any) => m.Id === memberId)
-      if (member && (member.Name || member.DisplayName)) {
-        const agentName = member.Name || member.DisplayName
-        console.log(`✅ Agent found by OrganizationMember.Id: ${agentName} (ID: ${memberId})`)
-        return { name: agentName.trim(), id: memberId }
-      }
-    }
-    console.log(`⚠️ Using OrganizationMember ID as fallback: ${memberId}`)
-    return { name: `Agente-${memberId}`, id: memberId }
-  }
-
-  // 4. Try Setor field (department/sector) - no ID available
-  if (chatData.Setor && typeof chatData.Setor === "string" && chatData.Setor.trim()) {
-    console.log(`✅ Agent found from Setor: ${chatData.Setor} (no ID available)`)
-    return { name: chatData.Setor.trim(), id: null }
-  }
-
-  // 5. Try first available member in OrganizationMembers
-  if (chatData.OrganizationMembers?.length > 0) {
-    const firstMember = chatData.OrganizationMembers[0]
-    const agentName = firstMember.Name || firstMember.DisplayName
-    const agentId = firstMember.Id
-    if (agentName && agentName.trim()) {
-      console.log(`✅ Agent found from first OrganizationMember: ${agentName} (ID: ${agentId})`)
-      return { name: agentName.trim(), id: agentId || null }
-    }
-  }
-
-  // 6. Final fallback
-  console.log("❌ No agent information found, using default")
-  return { name: "Atendente", id: null }
+interface UmblerContact {
+  Name?: string
+  PhoneNumber?: string
+  Phone?: string
+  Email?: string
 }
 
-function detectAndProcessTags(messageText: string, conversationId: string, chatData: any): string[] {
+interface UmblerMessage {
+  Id?: string
+  Content?: string
+  Source?: string
+  IsPrivate?: boolean
+  Sender?: {
+    Id?: string
+    Name?: string
+    DisplayName?: string
+  }
+}
+
+interface UmblerChatData {
+  Id: string
+  Contact?: UmblerContact
+  LastMessage: UmblerMessage
+  LastOrganizationMember?: { Id: string }
+  OrganizationMembers?: Array<{ Id: string; Name?: string; DisplayName?: string }>
+  OrganizationMember?: { Id: string }
+  Setor?: string
+  Tags?: string[]
+}
+
+function extractAgentInfo(chatData: UmblerChatData, lastMessage: UmblerMessage): { name: string; id: string | null } {
+  console.log("🔍 === EXTRACTING AGENT INFO (NAME + ID) ===")
+
+  try {
+    // 1. Try to get agent from LastOrganizationMember.Id in OrganizationMembers array
+    if (
+      chatData.LastOrganizationMember?.Id &&
+      Array.isArray(chatData.OrganizationMembers) &&
+      chatData.OrganizationMembers.length > 0
+    ) {
+      const memberId = chatData.LastOrganizationMember.Id
+      const member = chatData.OrganizationMembers.find((m) => m.Id === memberId)
+      if (member) {
+        const agentName = member.Name || member.DisplayName
+        if (agentName && agentName.trim()) {
+          console.log(`✅ Agent found by LastOrganizationMember.Id: ${agentName} (ID: ${memberId})`)
+          return { name: agentName.trim(), id: memberId }
+        }
+      }
+      // Even if no name found, we have the ID
+      console.log(`⚠️ Agent ID found but no name: ${memberId}`)
+      return { name: `Agente-${memberId}`, id: memberId }
+    }
+
+    // 2. Try to get agent from message sender (for agent messages)
+    const sourceValue = (lastMessage.Source || "").toLowerCase()
+    if (sourceValue === "agent" || sourceValue === "member") {
+      if (lastMessage.Sender?.Name) {
+        const senderId = lastMessage.Sender?.Id || null
+        console.log(`✅ Agent found from message sender: ${lastMessage.Sender.Name} (ID: ${senderId})`)
+        return { name: lastMessage.Sender.Name.trim(), id: senderId }
+      }
+      if (lastMessage.Sender?.DisplayName) {
+        const senderId = lastMessage.Sender?.Id || null
+        console.log(
+          `✅ Agent found from message sender DisplayName: ${lastMessage.Sender.DisplayName} (ID: ${senderId})`,
+        )
+        return { name: lastMessage.Sender.DisplayName.trim(), id: senderId }
+      }
+    }
+
+    // 3. Try OrganizationMember.Id (single member)
+    if (chatData.OrganizationMember?.Id) {
+      const memberId = chatData.OrganizationMember.Id
+      // Try to find name in OrganizationMembers array
+      if (Array.isArray(chatData.OrganizationMembers) && chatData.OrganizationMembers.length > 0) {
+        const member = chatData.OrganizationMembers.find((m) => m.Id === memberId)
+        if (member && (member.Name || member.DisplayName)) {
+          const agentName = member.Name || member.DisplayName
+          console.log(`✅ Agent found by OrganizationMember.Id: ${agentName} (ID: ${memberId})`)
+          return { name: agentName.trim(), id: memberId }
+        }
+      }
+      console.log(`⚠️ Using OrganizationMember ID as fallback: ${memberId}`)
+      return { name: `Agente-${memberId}`, id: memberId }
+    }
+
+    // 4. Try Setor field (department/sector) - no ID available
+    if (chatData.Setor && typeof chatData.Setor === "string" && chatData.Setor.trim()) {
+      console.log(`✅ Agent found from Setor: ${chatData.Setor} (no ID available)`)
+      return { name: chatData.Setor.trim(), id: null }
+    }
+
+    // 5. Try first available member in OrganizationMembers
+    if (Array.isArray(chatData.OrganizationMembers) && chatData.OrganizationMembers.length > 0) {
+      const firstMember = chatData.OrganizationMembers[0]
+      const agentName = firstMember.Name || firstMember.DisplayName
+      const agentId = firstMember.Id
+      if (agentName && agentName.trim()) {
+        console.log(`✅ Agent found from first OrganizationMember: ${agentName} (ID: ${agentId})`)
+        return { name: agentName.trim(), id: agentId || null }
+      }
+    }
+
+    // 6. Final fallback
+    console.log("❌ No agent information found, using default")
+    return { name: "Atendente", id: null }
+  } catch (error) {
+    console.error("❌ Error extracting agent info:", error)
+    return { name: "Atendente", id: null }
+  }
+}
+
+function detectAndProcessTags(messageText: string, conversationId: string, chatData: UmblerChatData): string[] {
   const detectedTags: string[] = []
 
-  // Fixed function to accept chatData parameter
-  // Detect tag addition messages from Umbler system
-  const tagAddedPattern = /etiqueta adicionada na conversa[:\s]*([^.\n]+)/i
-  const tagAddedMatch = messageText.match(tagAddedPattern)
+  try {
+    // Detect tag addition messages from Umbler system
+    const tagAddedPattern = /etiqueta adicionada na conversa[:\s]*([^.\n]+)/i
+    const tagAddedMatch = messageText.match(tagAddedPattern)
 
-  if (tagAddedMatch) {
-    const tagName = tagAddedMatch[1].trim()
-    console.log(`🏷️ Tag detectada: "${tagName}" na conversa ${conversationId}`)
-    detectedTags.push(tagName)
-  }
+    if (tagAddedMatch) {
+      const tagName = tagAddedMatch[1].trim()
+      console.log(`🏷️ Tag detectada: "${tagName}" na conversa ${conversationId}`)
+      detectedTags.push(tagName)
+    }
 
-  // Detect tag removal messages from Umbler system
-  const tagRemovedPattern = /etiqueta removida da conversa[:\s]*([^.\n]+)/i
-  const tagRemovedMatch = messageText.match(tagRemovedPattern)
+    // Detect tag removal messages from Umbler system
+    const tagRemovedPattern = /etiqueta removida da conversa[:\s]*([^.\n]+)/i
+    const tagRemovedMatch = messageText.match(tagRemovedPattern)
 
-  if (tagRemovedMatch) {
-    const tagName = tagRemovedMatch[1].trim()
-    console.log(`🏷️ Tag removida: "${tagName}" da conversa ${conversationId}`)
-    detectedTags.push(`REMOVE:${tagName}`)
-  }
+    if (tagRemovedMatch) {
+      const tagName = tagRemovedMatch[1].trim()
+      console.log(`🏷️ Tag removida: "${tagName}" da conversa ${conversationId}`)
+      detectedTags.push(`REMOVE:${tagName}`)
+    }
 
-  // Also check for tags in the chatData.Tags field if available
-  if (chatData.Tags && Array.isArray(chatData.Tags)) {
-    chatData.Tags.forEach((tag: string) => {
-      if (tag && tag.trim()) {
-        console.log(`🏷️ Tag do chatData: "${tag}" na conversa ${conversationId}`)
-        detectedTags.push(tag.trim())
-      }
-    })
+    // Also check for tags in the chatData.Tags field if available
+    if (Array.isArray(chatData.Tags)) {
+      chatData.Tags.forEach((tag: string) => {
+        if (tag && tag.trim()) {
+          console.log(`🏷️ Tag do chatData: "${tag}" na conversa ${conversationId}`)
+          detectedTags.push(tag.trim())
+        }
+      })
+    }
+  } catch (error) {
+    console.error("❌ Error detecting tags:", error)
   }
 
   return detectedTags
@@ -132,6 +173,11 @@ async function processTags(conversationId: string, tags: string[]) {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!process.env.DATABASE_URL) {
+      console.error("❌ DATABASE_URL environment variable is not set")
+      return NextResponse.json({ error: "Database configuration error" }, { status: 500 })
+    }
+
     const body = await request.json()
     console.log("🔄 Webhook Umbler recebido:", JSON.stringify(body, null, 2))
 
@@ -148,8 +194,8 @@ export async function POST(request: NextRequest) {
 
     // Processar apenas eventos de mensagem por enquanto
     if (Type === "Message" && Payload.Type === "Chat") {
-      const chatData = Payload.Content
-      const lastMessage = chatData.LastMessage
+      const chatData: UmblerChatData = Payload.Content
+      const lastMessage: UmblerMessage = chatData.LastMessage
 
       if (!chatData.Id || !lastMessage) {
         return NextResponse.json(
@@ -249,9 +295,6 @@ export async function POST(request: NextRequest) {
 
       if (sender_type === "agent" && !lastMessage.IsPrivate) {
         console.log("⏱️ === CALCULANDO TEMPO DE RESPOSTA ===")
-        console.log(`📝 Mensagem do agente: ${sender_name}`)
-        console.log(`📝 EventDate da resposta: ${EventDate}`)
-        console.log(`📝 Conversa: ${conversation_id}`)
 
         const lastCustomerMessage = await DatabaseService.getLastCustomerMessage(conversation_id)
 
@@ -259,12 +302,6 @@ export async function POST(request: NextRequest) {
           const customerMessageTime = new Date(lastCustomerMessage.timestamp)
           const agentResponseTime = new Date(EventDate)
           const responseTimeSeconds = Math.floor((agentResponseTime.getTime() - customerMessageTime.getTime()) / 1000)
-
-          console.log(`📊 Última mensagem cliente: ${lastCustomerMessage.timestamp}`)
-          console.log(`📊 Resposta do agente: ${EventDate}`)
-          console.log(
-            `⏱️ Tempo de resposta: ${responseTimeSeconds}s (${Math.floor(responseTimeSeconds / 60)}min ${responseTimeSeconds % 60}s)`,
-          )
 
           if (responseTimeSeconds > 0) {
             await DatabaseService.saveResponseTime({
@@ -279,18 +316,9 @@ export async function POST(request: NextRequest) {
             console.log(
               `✅ Tempo de resposta salvo: ${Math.floor(responseTimeSeconds / 60)}min ${responseTimeSeconds % 60}s`,
             )
-          } else {
-            console.log("⚠️ Tempo de resposta inválido (negativo ou zero)")
           }
-        } else {
-          console.log("ℹ️ Nenhuma mensagem de cliente encontrada para calcular tempo de resposta")
         }
-        console.log("==========================================")
       }
-
-      console.log(
-        `🎉 Mensagem processada - Conversa: ${conversation_id}, Sender: ${sender_type}, Agent ID: ${agent_id || "N/A"}, Site Customer: ${isSiteCustomer}, Tags: ${detectedTags.length}`,
-      )
 
       return NextResponse.json({
         success: true,

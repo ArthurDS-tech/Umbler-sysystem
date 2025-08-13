@@ -1,5 +1,9 @@
 import { neon } from "@neondatabase/serverless"
 
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL environment variable is required")
+}
+
 const sql = neon(process.env.DATABASE_URL!)
 
 export interface Conversation {
@@ -47,26 +51,35 @@ export class DatabaseService {
     customer_phone?: string
     customer_email?: string
     agent_name?: string
-    agent_id?: string // Added agent_id parameter
-    is_site_customer?: boolean // Adicionar parâmetro
-    tags?: string[] // Adicionar parâmetro
+    agent_id?: string
+    is_site_customer?: boolean
+    tags?: string[]
   }) {
-    const result = await sql`
-      INSERT INTO conversations (conversation_id, customer_name, customer_phone, customer_email, agent_name, agent_id, is_site_customer, tags, updated_at)
-      VALUES (${data.conversation_id}, ${data.customer_name}, ${data.customer_phone}, ${data.customer_email}, ${data.agent_name}, ${data.agent_id}, ${data.is_site_customer || false}, ${data.tags || []}, NOW())
-      ON CONFLICT (conversation_id) 
-      DO UPDATE SET 
-        customer_name = COALESCE(EXCLUDED.customer_name, conversations.customer_name),
-        customer_phone = COALESCE(EXCLUDED.customer_phone, conversations.customer_phone),
-        customer_email = COALESCE(EXCLUDED.customer_email, conversations.customer_email),
-        agent_name = COALESCE(EXCLUDED.agent_name, conversations.agent_name),
-        agent_id = COALESCE(EXCLUDED.agent_id, conversations.agent_id),
-        is_site_customer = COALESCE(EXCLUDED.is_site_customer, conversations.is_site_customer),
-        tags = array_append(conversations.tags, EXCLUDED.tags),
-        updated_at = NOW()
-      RETURNING *
-    `
-    return result[0] as Conversation
+    try {
+      const result = await sql`
+        INSERT INTO conversations (conversation_id, customer_name, customer_phone, customer_email, agent_name, agent_id, is_site_customer, tags, updated_at)
+        VALUES (${data.conversation_id}, ${data.customer_name}, ${data.customer_phone}, ${data.customer_email}, ${data.agent_name}, ${data.agent_id}, ${data.is_site_customer || false}, ${data.tags || []}, NOW())
+        ON CONFLICT (conversation_id) 
+        DO UPDATE SET 
+          customer_name = COALESCE(EXCLUDED.customer_name, conversations.customer_name),
+          customer_phone = COALESCE(EXCLUDED.customer_phone, conversations.customer_phone),
+          customer_email = COALESCE(EXCLUDED.customer_email, conversations.customer_email),
+          agent_name = COALESCE(EXCLUDED.agent_name, conversations.agent_name),
+          agent_id = COALESCE(EXCLUDED.agent_id, conversations.agent_id),
+          is_site_customer = COALESCE(EXCLUDED.is_site_customer, conversations.is_site_customer),
+          tags = CASE 
+            WHEN EXCLUDED.tags IS NOT NULL AND array_length(EXCLUDED.tags, 1) > 0 
+            THEN array_cat(conversations.tags, EXCLUDED.tags)
+            ELSE conversations.tags
+          END,
+          updated_at = NOW()
+        RETURNING *
+      `
+      return result[0] as Conversation
+    } catch (error) {
+      console.error("❌ Error creating/updating conversation:", error)
+      throw error
+    }
   }
 
   static async createMessage(data: {
@@ -78,13 +91,18 @@ export class DatabaseService {
     message_type?: string
     timestamp: Date
   }) {
-    const result = await sql`
-      INSERT INTO messages (conversation_id, message_id, sender_type, sender_name, message_text, message_type, timestamp)
-      VALUES (${data.conversation_id}, ${data.message_id}, ${data.sender_type}, ${data.sender_name}, ${data.message_text}, ${data.message_type || "text"}, ${data.timestamp})
-      ON CONFLICT (message_id) DO NOTHING
-      RETURNING *
-    `
-    return result[0] as Message
+    try {
+      const result = await sql`
+        INSERT INTO messages (conversation_id, message_id, sender_type, sender_name, message_text, message_type, timestamp)
+        VALUES (${data.conversation_id}, ${data.message_id}, ${data.sender_type}, ${data.sender_name}, ${data.message_text}, ${data.message_type || "text"}, ${data.timestamp})
+        ON CONFLICT (message_id) DO NOTHING
+        RETURNING *
+      `
+      return result[0] as Message
+    } catch (error) {
+      console.error("❌ Error creating message:", error)
+      throw error
+    }
   }
 
   static async getLastCustomerMessage(conversationId: string) {
