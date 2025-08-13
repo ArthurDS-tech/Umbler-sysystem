@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatResponseTime, getResponseTimeBadgeColor } from "@/lib/utils"
-import { User, Clock, MessageSquare, AlertTriangle, CheckCircle, XCircle } from "lucide-react"
+import { User, Clock, MessageSquare, AlertTriangle, CheckCircle, XCircle, Users, Globe, Phone } from "lucide-react"
 
 interface AgentMetrics {
   agent_name: string
@@ -23,6 +23,7 @@ interface PendingConversation {
   wait_time_formatted: string
   wait_time_category: "normal" | "attention" | "urgent"
   last_message_text: string
+  last_customer_message_time?: string
 }
 
 interface AgentPerformanceDetails {
@@ -31,11 +32,34 @@ interface AgentPerformanceDetails {
     total_conversations: number
     active_conversations: number
     closed_conversations: number
+    site_customers: number
+    total_messages: number
+    customer_messages: number
+    agent_messages: number
     avg_response_time: number
     response_count: number
   }
   pending_conversations: PendingConversation[]
   recent_conversations: any[]
+}
+
+function calculateWaitTime(lastMessageTime: string): {
+  minutes: number
+  formatted: string
+  category: "normal" | "attention" | "urgent"
+} {
+  const now = new Date()
+  const lastMessage = new Date(lastMessageTime)
+  const diffMs = now.getTime() - lastMessage.getTime()
+  const minutes = Math.floor(diffMs / (1000 * 60))
+
+  let category: "normal" | "attention" | "urgent" = "normal"
+  if (minutes > 60) category = "urgent"
+  else if (minutes > 30) category = "attention"
+
+  const formatted = minutes < 60 ? `${minutes}min` : `${Math.floor(minutes / 60)}h ${minutes % 60}min`
+
+  return { minutes, formatted, category }
 }
 
 export function AgentPerformance() {
@@ -44,6 +68,15 @@ export function AgentPerformance() {
   const [agentDetails, setAgentDetails] = useState<AgentPerformanceDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [detailsLoading, setDetailsLoading] = useState(false)
+  const [currentTime, setCurrentTime] = useState(new Date())
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 1000) // Update every second
+
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     async function fetchAgents() {
@@ -75,9 +108,13 @@ export function AgentPerformance() {
       try {
         const response = await fetch(`/api/agents/${encodeURIComponent(selectedAgent)}/performance`)
         const data = await response.json()
+        if (data && !Array.isArray(data.pending_conversations)) {
+          data.pending_conversations = []
+        }
         setAgentDetails(data)
       } catch (error) {
         console.error("Erro ao carregar detalhes do agente:", error)
+        setAgentDetails(null)
       } finally {
         setDetailsLoading(false)
       }
@@ -113,6 +150,23 @@ export function AgentPerformance() {
   }
 
   const maxResponseTime = Math.max(...agents.map((a) => a.avg_response_time))
+
+  const safePendingConversations = Array.isArray(agentDetails?.pending_conversations)
+    ? agentDetails.pending_conversations.map((conv) => {
+        if (conv.last_customer_message_time) {
+          const waitTime = calculateWaitTime(conv.last_customer_message_time)
+          return {
+            ...conv,
+            wait_time_minutes: waitTime.minutes,
+            wait_time_formatted: waitTime.formatted,
+            wait_time_category: waitTime.category,
+          }
+        }
+        return conv
+      })
+    : []
+
+  const urgentCount = safePendingConversations.filter((c) => c.wait_time_category === "urgent").length
 
   return (
     <div className="space-y-6">
@@ -170,19 +224,18 @@ export function AgentPerformance() {
       {selectedAgent && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 mb-4">
-            <h3 className="text-lg font-semibold">Performance de {selectedAgent}</h3>
+            <h3 className="text-lg font-semibold">Performance Completa de {selectedAgent}</h3>
             {detailsLoading && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500" />}
           </div>
 
           {agentDetails && (
             <>
-              {/* Performance Overview Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <MessageSquare className="h-4 w-4 text-blue-500" />
-                      Conversas
+                      <Users className="h-4 w-4 text-blue-500" />
+                      Total de Contatos
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -197,6 +250,41 @@ export function AgentPerformance() {
                         {agentDetails.agent_stats.closed_conversations} fechadas
                       </span>
                     </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4 text-green-500" />
+                      Total de Mensagens
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{agentDetails.agent_stats.total_messages || 0}</div>
+                    <div className="text-xs text-gray-600 flex items-center gap-2">
+                      <span className="flex items-center gap-1">
+                        <Phone className="h-3 w-3 text-blue-500" />
+                        {agentDetails.agent_stats.customer_messages || 0} recebidas
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <MessageSquare className="h-3 w-3 text-green-500" />
+                        {agentDetails.agent_stats.agent_messages || 0} enviadas
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Globe className="h-4 w-4 text-purple-500" />
+                      Clientes do Site
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{agentDetails.agent_stats.site_customers || 0}</div>
+                    <div className="text-xs text-gray-600">Clientes vindos do site</div>
                   </CardContent>
                 </Card>
 
@@ -225,39 +313,56 @@ export function AgentPerformance() {
                     </Badge>
                   </CardContent>
                 </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-red-500" />
-                      Aguardando Resposta
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{agentDetails.pending_conversations.length}</div>
-                    <div className="text-xs text-gray-600">
-                      {agentDetails.pending_conversations.filter((c) => c.wait_time_category === "urgent").length}{" "}
-                      urgentes
-                    </div>
-                  </CardContent>
-                </Card>
               </div>
 
-              {/* Pending Conversations - Conversations waiting for response */}
-              {agentDetails.pending_conversations.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-red-500" />
+                    Status Atual - Aguardando Resposta
+                    <Badge variant="outline" className="text-xs">
+                      {safePendingConversations.length} conversas
+                    </Badge>
+                  </CardTitle>
+                  <CardDescription>Clientes que enviaram mensagem e estão esperando resposta</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div className="text-center p-3 bg-green-50 rounded-lg">
+                      <div className="text-2xl font-bold text-green-600">
+                        {safePendingConversations.filter((c) => c.wait_time_category === "normal").length}
+                      </div>
+                      <div className="text-xs text-green-700">Normal (&lt;30min)</div>
+                    </div>
+                    <div className="text-center p-3 bg-yellow-50 rounded-lg">
+                      <div className="text-2xl font-bold text-yellow-600">
+                        {safePendingConversations.filter((c) => c.wait_time_category === "attention").length}
+                      </div>
+                      <div className="text-xs text-yellow-700">Atenção (30-60min)</div>
+                    </div>
+                    <div className="text-center p-3 bg-red-50 rounded-lg">
+                      <div className="text-2xl font-bold text-red-600">{urgentCount}</div>
+                      <div className="text-xs text-red-700">Urgente (&gt;60min)</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Pending Conversations Details */}
+              {safePendingConversations.length > 0 && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <AlertTriangle className="h-5 w-5 text-red-500" />
-                      Clientes Aguardando Resposta
+                      Detalhes dos Clientes Aguardando
+                      <Badge variant="outline" className="text-xs">
+                        Atualizado: {currentTime.toLocaleTimeString()}
+                      </Badge>
                     </CardTitle>
-                    <CardDescription>
-                      Conversas onde o cliente enviou a última mensagem e está esperando resposta
-                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3 max-h-64 overflow-y-auto">
-                      {agentDetails.pending_conversations.map((conv) => (
+                      {safePendingConversations.map((conv) => (
                         <div
                           key={conv.conversation_id}
                           className={`p-3 rounded-lg border-l-4 ${

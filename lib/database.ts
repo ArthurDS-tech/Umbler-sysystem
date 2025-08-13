@@ -384,13 +384,20 @@ export class DatabaseService {
         COUNT(*) as total_site_customers,
         COUNT(CASE WHEN status = 'closed' THEN 1 END) as closed_conversations,
         COUNT(CASE WHEN status = 'active' THEN 1 END) as active_conversations,
-        AVG(rt.response_time_seconds) as avg_response_time,
-        COUNT(DISTINCT DATE(c.created_at)) as days_with_site_customers
+        AVG(rt.response_time_seconds) as avg_response_time
       FROM conversations c
       LEFT JOIN response_times rt ON c.conversation_id = rt.conversation_id
       WHERE c.is_site_customer = true
     `
-    return result[0]
+
+    const stats = result[0]
+
+    return {
+      totalSiteCustomers: Number.parseInt(stats.total_site_customers) || 0,
+      closedConversations: Number.parseInt(stats.closed_conversations) || 0,
+      activeConversations: Number.parseInt(stats.active_conversations) || 0,
+      avgResponseTimeSeconds: Number.parseFloat(stats.avg_response_time) || 0,
+    }
   }
 
   static async addTagToConversation(conversationId: string, tag: string) {

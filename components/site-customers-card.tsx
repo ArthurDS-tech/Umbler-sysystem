@@ -68,12 +68,11 @@ export function SiteCustomersCard() {
         </CardContent>
       </Card>
 
-      {/* Tooltip com informações detalhadas */}
-      <div className="absolute top-full left-0 mt-2 w-80 bg-white rounded-lg shadow-xl border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50">
+      <div className="absolute top-full left-0 mt-2 w-96 bg-white rounded-lg shadow-xl border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50">
         <div className="p-4">
-          <h3 className="font-semibold mb-3 flex items-center gap-2" style={{ color: "#3E403F" }}>
+          <h3 className="font-semibold mb-4 flex items-center gap-2" style={{ color: "#3E403F" }}>
             <Users className="h-4 w-4" />
-            Detalhes dos Clientes do Site
+            Análise Completa dos Clientes do Site
           </h3>
 
           <div className="space-y-3">
@@ -110,7 +109,7 @@ export function SiteCustomersCard() {
 
           <div className="mt-3 pt-3 border-t">
             <p className="text-xs" style={{ color: "#3E403F", opacity: 0.6 }}>
-              Clientes identificados pela mensagem: "Olá, vim do site do Marcelino"
+              Clientes identificados automaticamente através de mensagens e tags do site
             </p>
           </div>
         </div>

@@ -265,12 +265,17 @@ function detectSiteCustomer(messageText: string, chatData: UmblerChatData): bool
   try {
     const lowerMessage = messageText.toLowerCase()
 
-    // Common patterns that indicate a customer came from the website
+    console.log("🌐 === DETECÇÃO CLIENTE SITE DEBUG ===")
+    console.log("📝 Mensagem original:", messageText)
+    console.log("📝 Mensagem lowercase:", lowerMessage)
+
     const sitePatterns = [
       /ol[aá],?\s*vim do site/i,
       /ol[aá],?\s*encontrei voc[eê]s no site/i,
-      /vi no site/i,
+      /ol[aá],?\s*vi no site/i,
+      /vim do site/i,
       /encontrei no site/i,
+      /vi no site/i,
       /pelo site/i,
       /atrav[eé]s do site/i,
       /formulário do site/i,
@@ -279,30 +284,33 @@ function detectSiteCustomer(messageText: string, chatData: UmblerChatData): bool
       /website/i,
       /marcelino.*site/i,
       /site.*marcelino/i,
+      /site do marcelino/i,
+      /marcelino\.com/i,
+      /www\.marcelino/i,
     ]
 
     // Check message content for site indicators
     for (const pattern of sitePatterns) {
+      console.log(`🔍 Testando padrão: ${pattern.source}`)
       if (pattern.test(lowerMessage)) {
-        console.log(`🌐 Cliente do site detectado por padrão: "${pattern.source}"`)
+        console.log(`✅ MATCH! Cliente do site detectado por padrão: "${pattern.source}"`)
         return true
       }
     }
 
-    // Check if there are specific tags that indicate site customer
     if (Array.isArray(chatData.Tags)) {
-      const siteTags = ["site", "website", "web", "online", "formulario", "contato-site"]
+      const siteTags = ["site", "website", "web", "online", "formulario", "contato-site", "marcelino"]
       for (const tag of chatData.Tags) {
-        if (siteTags.some((siteTag) => tag.toLowerCase().includes(siteTag))) {
-          console.log(`🌐 Cliente do site detectado por tag: "${tag}"`)
+        const lowerTag = tag.toLowerCase()
+        console.log(`🏷️ Verificando tag: "${tag}" (lowercase: "${lowerTag}")`)
+        if (siteTags.some((siteTag) => lowerTag.includes(siteTag))) {
+          console.log(`✅ Cliente do site detectado por tag: "${tag}"`)
           return true
         }
       }
     }
 
-    // Check contact source or other indicators
-    // You can add more sophisticated logic here based on your needs
-
+    console.log("❌ Nenhum padrão de site detectado")
     return false
   } catch (error) {
     console.error("❌ Error detecting site customer:", error)

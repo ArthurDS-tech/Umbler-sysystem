@@ -92,21 +92,6 @@ export function ConversationDetails({ conversationId }: ConversationDetailsProps
 
   return (
     <div className="space-y-6">
-      <Card className="bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-blue-600" />
-                Conversa #{conversationId.slice(-8)}
-              </CardTitle>
-              <CardDescription className="mt-1">Análise detalhada de tempo de resposta por mensagem</CardDescription>
-            </div>
-            <Badge className="bg-blue-500 hover:bg-blue-600 text-white">💙 CLIENTE SITE</Badge>
-          </div>
-        </CardHeader>
-      </Card>
-
       {/* Estatísticas da Conversa */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="hover:shadow-md transition-shadow">

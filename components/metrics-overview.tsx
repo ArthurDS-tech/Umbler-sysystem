@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Clock, MessageSquare, Users, Activity } from "lucide-react"
+import { MessageSquare, Users, Activity } from "lucide-react"
 import { formatResponseTime, getResponseTimeBadgeColor } from "@/lib/utils"
 
 interface SystemMetrics {
@@ -39,8 +39,8 @@ export function MetricsOverview() {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {[...Array(4)].map((_, i) => (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        {[...Array(3)].map((_, i) => (
           <Card key={i} className="animate-pulse">
             <CardContent className="p-6">
               <div className="h-4 bg-gray-200 rounded mb-2" />
@@ -61,7 +61,7 @@ export function MetricsOverview() {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Total de Conversas</CardTitle>
@@ -86,18 +86,7 @@ export function MetricsOverview() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Respostas Medidas</CardTitle>
-          <Clock className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{metrics.total_response_times}</div>
-          <p className="text-xs text-muted-foreground">Tempos de resposta calculados</p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Tempo Médio</CardTitle>
+          <CardTitle className="text-sm font-medium">Tempo Médio de Resposta</CardTitle>
           <Users className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
