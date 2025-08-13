@@ -35,7 +35,6 @@ export async function POST(request: NextRequest) {
       console.log("📝 lastMessage:", JSON.stringify(lastMessage, null, 2))
       console.log("👤 chatData.Contact:", JSON.stringify(chatData.Contact, null, 2))
       console.log("🎧 chatData.OrganizationMember:", JSON.stringify(chatData.OrganizationMember, null, 2))
-      console.log("🔍 Payload.Content:", JSON.stringify(Payload.Content, null, 2))
 
       const conversation_id = chatData.Id
       const customer_name = chatData.Contact?.Name || "Cliente"
@@ -47,80 +46,41 @@ export async function POST(request: NextRequest) {
       console.log("📊 Source processado:", sourceValue)
 
       let sender_type: "customer" | "agent"
-
-      // Lógica melhorada para identificar o tipo de remetente
       if (sourceValue === "contact" || sourceValue === "customer") {
         sender_type = "customer"
       } else if (sourceValue === "agent" || sourceValue === "member" || sourceValue === "organizationmember") {
         sender_type = "agent"
       } else {
-        // Fallback: verificar se há dados de membro/organização
-        const hasMemberData = lastMessage.Member?.Name || chatData.OrganizationMember?.Name
-        sender_type = hasMemberData ? "agent" : "customer"
-        console.log("⚠️ Fallback usado - sender_type:", sender_type, "hasMemberData:", !!hasMemberData)
+        // Fallback simples
+        sender_type = lastMessage.Member?.Name ? "agent" : "customer"
       }
 
       console.log("📊 sender_type determinado:", sender_type)
 
-      // NOVA FUNCIONALIDADE: Captura inteligente do nome do atendente
-      let agent_name = "Sistema"
+      let agent_name: string
       let sender_name: string
 
       if (sender_type === "agent") {
-        // Capturar nome do atendente que está enviando a mensagem
-        agent_name = 
+        // Para mensagens de agente: quem enviou é o atendente
+        agent_name =
           lastMessage.Member?.Name ||
           lastMessage.Member?.DisplayName ||
-          lastMessage.Member?.FullName ||
-          lastMessage.Member?.FirstName ||
-          lastMessage.Member?.Username ||
-          lastMessage.Member?.Email ||
           chatData.OrganizationMember?.Name ||
-          chatData.OrganizationMember?.DisplayName ||
-          chatData.OrganizationMember?.FullName ||
-          chatData.OrganizationMember?.FirstName ||
-          chatData.OrganizationMember?.Username ||
-          chatData.OrganizationMember?.Email ||
-          Payload.Content?.OrganizationMember?.Name ||
-          Payload.Content?.OrganizationMember?.DisplayName ||
           "Atendente"
-
         sender_name = agent_name
-        
-        console.log("🎧 === CAPTURA DO NOME DO ATENDENTE ===")
-        console.log("lastMessage.Member?.Name:", lastMessage.Member?.Name)
-        console.log("lastMessage.Member?.DisplayName:", lastMessage.Member?.DisplayName)
-        console.log("chatData.OrganizationMember?.Name:", chatData.OrganizationMember?.Name)
-        console.log("chatData.OrganizationMember?.DisplayName:", chatData.OrganizationMember?.DisplayName)
-        console.log("Nome do atendente capturado:", agent_name)
-        console.log("=====================================")
       } else {
-        // Para mensagens de cliente, manter o agente responsável pela conversa
-        agent_name = 
-          chatData.OrganizationMember?.Name ||
-          chatData.OrganizationMember?.DisplayName ||
-          chatData.OrganizationMember?.FullName ||
-          chatData.OrganizationMember?.FirstName ||
-          chatData.OrganizationMember?.Username ||
-          chatData.OrganizationMember?.Email ||
-          "Sistema"
-        
+        // Para mensagens de cliente: agente responsável pela conversa
+        agent_name = chatData.OrganizationMember?.Name || chatData.OrganizationMember?.DisplayName || "Sistema"
         sender_name = customer_name
-        
-        console.log("👤 === AGENTE RESPONSÁVEL PELA CONVERSA ===")
-        console.log("chatData.OrganizationMember?.Name:", chatData.OrganizationMember?.Name)
-        console.log("chatData.OrganizationMember?.DisplayName:", chatData.OrganizationMember?.DisplayName)
-        console.log("Agente responsável:", agent_name)
-        console.log("=====================================")
       }
 
-      console.log("✅ === RESULTADO FINAL ===")
+      console.log("✅ === RESULTADO FINAL SIMPLIFICADO ===")
       console.log(`📊 sender_type: "${sender_type}"`)
       console.log(`👤 sender_name: "${sender_name}"`)
       console.log(`🎧 agent_name: "${agent_name}"`)
       console.log("=====================================")
 
-      const message_text = lastMessage.Content || "🎵 Mensagem de áudio Ou arquivo"
+      const message_text = lastMessage.Content || "🎵 Mensagem de áudio ou arquivo"
       const isSiteCustomer = message_text.toLowerCase().includes("olá, vim do site do marcelino")
 
       console.log("🌐 === DETECÇÃO CLIENTE SITE ===")
@@ -153,7 +113,7 @@ export async function POST(request: NextRequest) {
 
       console.log("💾 Mensagem salva no banco:", savedMessage ? "✅ Sucesso" : "❌ Falhou")
 
-      // O resto do código permanece igual (cálculo de tempo de resposta)...
+      // Cálculo de tempo de resposta (mantido igual)
       if (sender_type === "agent" && !lastMessage.IsPrivate) {
         console.log("⏱️ === CALCULANDO TEMPO DE RESPOSTA ===")
         console.log(`📝 Mensagem do agente: ${sender_name}`)
@@ -206,7 +166,7 @@ export async function POST(request: NextRequest) {
         conversation_id,
         sender_type,
         sender_name,
-        agent_name, // Adicionando agent_name na resposta para debug
+        agent_name,
         is_site_customer: isSiteCustomer,
         event_id: EventId,
         processed_at: new Date().toISOString(),
@@ -231,7 +191,6 @@ export async function POST(request: NextRequest) {
       const conversation_id = Payload.Content.Id
       const new_agent = Payload.Content.OrganizationMember?.Name || "Sistema"
       await DatabaseService.updateConversationAgent(conversation_id, new_agent)
-      console.log(`✅ Transferência processada - Conversa: ${conversation_id}, Novo agente: ${new_agent}`)
       console.log(`✅ Transferência processada - Conversa: ${conversation_id}, Novo agente: ${new_agent}`)
       return NextResponse.json({
         success: true,
