@@ -1,8 +1,35 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { DatabaseService } from "@/lib/database"
 
-function extractAgentName(chatData: any, lastMessage: any): string {
-  console.log("🔍 === EXTRACTING AGENT NAME ===")
+function parseChannelAttendant(fullName: string): { channel: string | null; attendantName: string; fullName: string } {
+  // Check if the name follows the pattern "Channel - Attendant Name"
+  const channelPattern = /^([^-]+)\s*-\s*(.+)$/
+  const match = fullName.match(channelPattern)
+
+  if (match) {
+    const channel = match[1].trim()
+    const attendantName = match[2].trim()
+    console.log(`🏢 Canal detectado: "${channel}", Atendente: "${attendantName}"`)
+    return {
+      channel,
+      attendantName,
+      fullName: fullName.trim(),
+    }
+  }
+
+  // If no pattern match, treat as single name
+  return {
+    channel: null,
+    attendantName: fullName.trim(),
+    fullName: fullName.trim(),
+  }
+}
+
+function extractAgentInfo(
+  chatData: any,
+  lastMessage: any,
+): { name: string; id: string | null; channel: string | null; attendantName: string } {
+  console.log("🔍 === EXTRACTING AGENT INFO (NAME + ID + CHANNEL) ===")
   console.log("📊 LastOrganizationMember:", JSON.stringify(chatData.LastOrganizationMember, null, 2))
   console.log("📊 OrganizationMembers:", JSON.stringify(chatData.OrganizationMembers, null, 2))
   console.log("📊 OrganizationMember:", JSON.stringify(chatData.OrganizationMember, null, 2))
@@ -15,56 +42,101 @@ function extractAgentName(chatData: any, lastMessage: any): string {
     if (member) {
       const agentName = member.Name || member.DisplayName
       if (agentName && agentName.trim()) {
-        console.log(`✅ Agent found by LastOrganizationMember.Id: ${agentName}`)
-        return agentName.trim()
+        const parsed = parseChannelAttendant(agentName)
+        console.log(`✅ Agent found by LastOrganizationMember.Id: ${parsed.fullName} (ID: ${memberId})`)
+        return {
+          name: parsed.fullName,
+          id: memberId,
+          channel: parsed.channel,
+          attendantName: parsed.attendantName,
+        }
       }
     }
+    // Even if no name found, we have the ID
+    console.log(`⚠️ Agent ID found but no name: ${memberId}`)
+    return { name: `Agente-${memberId}`, id: memberId, channel: null, attendantName: `Agente-${memberId}` }
   }
 
   // 2. Try to get agent from message sender (for agent messages)
   if (lastMessage.Source?.toLowerCase() === "agent" || lastMessage.Source?.toLowerCase() === "member") {
     if (lastMessage.Sender?.Name) {
-      console.log(`✅ Agent found from message sender: ${lastMessage.Sender.Name}`)
-      return lastMessage.Sender.Name.trim()
+      const senderId = lastMessage.Sender?.Id || null
+      const parsed = parseChannelAttendant(lastMessage.Sender.Name)
+      console.log(`✅ Agent found from message sender: ${parsed.fullName} (ID: ${senderId})`)
+      return {
+        name: parsed.fullName,
+        id: senderId,
+        channel: parsed.channel,
+        attendantName: parsed.attendantName,
+      }
     }
     if (lastMessage.Sender?.DisplayName) {
-      console.log(`✅ Agent found from message sender DisplayName: ${lastMessage.Sender.DisplayName}`)
-      return lastMessage.Sender.DisplayName.trim()
+      const senderId = lastMessage.Sender?.Id || null
+      const parsed = parseChannelAttendant(lastMessage.Sender.DisplayName)
+      console.log(`✅ Agent found from message sender DisplayName: ${parsed.fullName} (ID: ${senderId})`)
+      return {
+        name: parsed.fullName,
+        id: senderId,
+        channel: parsed.channel,
+        attendantName: parsed.attendantName,
+      }
     }
   }
 
-  // 3. Try Setor field (department/sector)
-  if (chatData.Setor && typeof chatData.Setor === "string" && chatData.Setor.trim()) {
-    console.log(`✅ Agent found from Setor: ${chatData.Setor}`)
-    return chatData.Setor.trim()
+  // 3. Try OrganizationMember.Id (single member)
+  if (chatData.OrganizationMember?.Id) {
+    const memberId = chatData.OrganizationMember.Id
+    // Try to find name in OrganizationMembers array
+    if (chatData.OrganizationMembers?.length > 0) {
+      const member = chatData.OrganizationMembers.find((m: any) => m.Id === memberId)
+      if (member && (member.Name || member.DisplayName)) {
+        const agentName = member.Name || member.DisplayName
+        const parsed = parseChannelAttendant(agentName)
+        console.log(`✅ Agent found by OrganizationMember.Id: ${parsed.fullName} (ID: ${memberId})`)
+        return {
+          name: parsed.fullName,
+          id: memberId,
+          channel: parsed.channel,
+          attendantName: parsed.attendantName,
+        }
+      }
+    }
+    console.log(`⚠️ Using OrganizationMember ID as fallback: ${memberId}`)
+    return { name: `Agente-${memberId}`, id: memberId, channel: null, attendantName: `Agente-${memberId}` }
   }
 
-  // 4. Try first available member in OrganizationMembers
+  // 4. Try Setor field (department/sector) - no ID available
+  if (chatData.Setor && typeof chatData.Setor === "string" && chatData.Setor.trim()) {
+    const parsed = parseChannelAttendant(chatData.Setor)
+    console.log(`✅ Agent found from Setor: ${parsed.fullName} (no ID available)`)
+    return {
+      name: parsed.fullName,
+      id: null,
+      channel: parsed.channel,
+      attendantName: parsed.attendantName,
+    }
+  }
+
+  // 5. Try first available member in OrganizationMembers
   if (chatData.OrganizationMembers?.length > 0) {
     const firstMember = chatData.OrganizationMembers[0]
     const agentName = firstMember.Name || firstMember.DisplayName
+    const agentId = firstMember.Id
     if (agentName && agentName.trim()) {
-      console.log(`✅ Agent found from first OrganizationMember: ${agentName}`)
-      return agentName.trim()
+      const parsed = parseChannelAttendant(agentName)
+      console.log(`✅ Agent found from first OrganizationMember: ${parsed.fullName} (ID: ${agentId})`)
+      return {
+        name: parsed.fullName,
+        id: agentId || null,
+        channel: parsed.channel,
+        attendantName: parsed.attendantName,
+      }
     }
-  }
-
-  // 5. Fallback to ID if available
-  if (chatData.LastOrganizationMember?.Id) {
-    const fallbackName = `Agente-${chatData.LastOrganizationMember.Id}`
-    console.log(`⚠️ Using agent ID as fallback: ${fallbackName}`)
-    return fallbackName
-  }
-
-  if (chatData.OrganizationMember?.Id) {
-    const fallbackName = `Agente-${chatData.OrganizationMember.Id}`
-    console.log(`⚠️ Using OrganizationMember ID as fallback: ${fallbackName}`)
-    return fallbackName
   }
 
   // 6. Final fallback
   console.log("❌ No agent information found, using default")
-  return "Atendente"
+  return { name: "Atendente", id: null, channel: null, attendantName: "Atendente" }
 }
 
 function detectAndProcessTags(messageText: string, conversationId: string, chatData: any): string[] {
@@ -177,7 +249,11 @@ export async function POST(request: NextRequest) {
 
       console.log("📊 sender_type determinado:", sender_type)
 
-      const agent_name = extractAgentName(chatData, lastMessage)
+      const agentInfo = extractAgentInfo(chatData, lastMessage)
+      const agent_name = agentInfo.name
+      const agent_id = agentInfo.id
+      const agent_channel = agentInfo.channel
+      const attendant_name = agentInfo.attendantName
 
       let sender_name: string
       if (sender_type === "agent") {
@@ -188,10 +264,13 @@ export async function POST(request: NextRequest) {
         sender_name = customer_name
       }
 
-      console.log("✅ === RESULTADO FINAL ROBUSTO ===")
+      console.log("✅ === RESULTADO FINAL COM CANAL E ATENDENTE ===")
       console.log(`📊 sender_type: "${sender_type}"`)
       console.log(`👤 sender_name: "${sender_name}"`)
       console.log(`🎧 agent_name: "${agent_name}"`)
+      console.log(`🆔 agent_id: "${agent_id || "N/A"}"`)
+      console.log(`🏢 agent_channel: "${agent_channel || "N/A"}"`)
+      console.log(`👨‍💼 attendant_name: "${attendant_name}"`)
       console.log("=====================================")
 
       const message_text = lastMessage.Content || "🎵 Mensagem de áudio ou arquivo"
@@ -202,7 +281,6 @@ export async function POST(request: NextRequest) {
       console.log("🔍 É cliente do site?", isSiteCustomer ? "✅ SIM" : "❌ NÃO")
 
       console.log("🏷️ === PROCESSAMENTO DE ETIQUETAS ===")
-      // Fixed function call to pass chatData parameter
       const detectedTags = detectAndProcessTags(message_text, conversation_id, chatData)
       console.log(`🏷️ Tags detectadas: ${detectedTags.length > 0 ? detectedTags.join(", ") : "Nenhuma"}`)
 
@@ -212,6 +290,7 @@ export async function POST(request: NextRequest) {
         customer_phone,
         customer_email,
         agent_name,
+        agent_id,
         is_site_customer: isSiteCustomer,
       })
 
@@ -277,7 +356,7 @@ export async function POST(request: NextRequest) {
       }
 
       console.log(
-        `🎉 Mensagem processada - Conversa: ${conversation_id}, Sender: ${sender_type}, Site Customer: ${isSiteCustomer}, Tags: ${detectedTags.length}`,
+        `🎉 Mensagem processada - Conversa: ${conversation_id}, Sender: ${sender_type}, Agent ID: ${agent_id || "N/A"}, Site Customer: ${isSiteCustomer}, Tags: ${detectedTags.length}`,
       )
 
       return NextResponse.json({
@@ -288,6 +367,9 @@ export async function POST(request: NextRequest) {
         sender_type,
         sender_name,
         agent_name,
+        agent_id,
+        agent_channel,
+        attendant_name,
         is_site_customer: isSiteCustomer,
         detected_tags: detectedTags,
         event_id: EventId,
@@ -310,15 +392,21 @@ export async function POST(request: NextRequest) {
 
     if (Type === "MemberTransfer") {
       const conversation_id = Payload.Content.Id
-      const new_agent = extractAgentName(Payload.Content, {}) || "Sistema"
-      await DatabaseService.updateConversationAgent(conversation_id, new_agent)
-      console.log(`✅ Transferência processada - Conversa: ${conversation_id}, Novo agente: ${new_agent}`)
+      const agentInfo = extractAgentInfo(Payload.Content, {})
+      const new_agent = agentInfo.name
+      const new_agent_id = agentInfo.id
+
+      await DatabaseService.updateConversationAgent(conversation_id, new_agent, new_agent_id)
+      console.log(
+        `✅ Transferência processada - Conversa: ${conversation_id}, Novo agente: ${new_agent} (ID: ${new_agent_id || "N/A"})`,
+      )
       return NextResponse.json({
         success: true,
         message: "Transferência processada",
         event_type: Type,
         conversation_id,
         new_agent,
+        new_agent_id,
         event_id: EventId,
       })
     }

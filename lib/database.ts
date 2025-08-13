@@ -9,6 +9,7 @@ export interface Conversation {
   customer_phone?: string
   customer_email?: string
   agent_name?: string
+  agent_id?: string // Added agent_id field
   status: string
   is_site_customer?: boolean // Adicionar flag para cliente do site
   tags?: string[] // Adicionar tags
@@ -46,18 +47,20 @@ export class DatabaseService {
     customer_phone?: string
     customer_email?: string
     agent_name?: string
+    agent_id?: string // Added agent_id parameter
     is_site_customer?: boolean // Adicionar parâmetro
     tags?: string[] // Adicionar parâmetro
   }) {
     const result = await sql`
-      INSERT INTO conversations (conversation_id, customer_name, customer_phone, customer_email, agent_name, is_site_customer, tags, updated_at)
-      VALUES (${data.conversation_id}, ${data.customer_name}, ${data.customer_phone}, ${data.customer_email}, ${data.agent_name}, ${data.is_site_customer || false}, ${data.tags || []}, NOW())
+      INSERT INTO conversations (conversation_id, customer_name, customer_phone, customer_email, agent_name, agent_id, is_site_customer, tags, updated_at)
+      VALUES (${data.conversation_id}, ${data.customer_name}, ${data.customer_phone}, ${data.customer_email}, ${data.agent_name}, ${data.agent_id}, ${data.is_site_customer || false}, ${data.tags || []}, NOW())
       ON CONFLICT (conversation_id) 
       DO UPDATE SET 
         customer_name = COALESCE(EXCLUDED.customer_name, conversations.customer_name),
         customer_phone = COALESCE(EXCLUDED.customer_phone, conversations.customer_phone),
         customer_email = COALESCE(EXCLUDED.customer_email, conversations.customer_email),
         agent_name = COALESCE(EXCLUDED.agent_name, conversations.agent_name),
+        agent_id = COALESCE(EXCLUDED.agent_id, conversations.agent_id),
         is_site_customer = COALESCE(EXCLUDED.is_site_customer, conversations.is_site_customer),
         tags = array_append(conversations.tags, EXCLUDED.tags),
         updated_at = NOW()
@@ -262,7 +265,7 @@ export class DatabaseService {
       FROM conversations c
       LEFT JOIN messages m ON c.conversation_id = m.conversation_id
       LEFT JOIN response_times rt ON c.conversation_id = rt.conversation_id
-      GROUP BY c.id, c.conversation_id, c.customer_name, c.customer_phone, c.customer_email, c.agent_name, c.status, c.is_site_customer, c.created_at, c.updated_at, c.tags
+      GROUP BY c.id, c.conversation_id, c.customer_name, c.customer_phone, c.customer_email, c.agent_name, c.agent_id, c.status, c.is_site_customer, c.created_at, c.updated_at, c.tags
       ORDER BY c.updated_at DESC
     `
     return result
@@ -296,10 +299,10 @@ export class DatabaseService {
     return result[0] as Conversation
   }
 
-  static async updateConversationAgent(conversationId: string, agentName: string) {
+  static async updateConversationAgent(conversationId: string, agentName: string, agentId?: string) {
     const result = await sql`
       UPDATE conversations 
-      SET agent_name = ${agentName}, updated_at = NOW()
+      SET agent_name = ${agentName}, agent_id = ${agentId}, updated_at = NOW()
       WHERE conversation_id = ${conversationId}
       RETURNING *
     `
@@ -335,7 +338,7 @@ export class DatabaseService {
       LEFT JOIN messages m ON c.conversation_id = m.conversation_id
       LEFT JOIN response_times rt ON c.conversation_id = rt.conversation_id
       WHERE c.is_site_customer = true
-      GROUP BY c.id, c.conversation_id, c.customer_name, c.customer_phone, c.customer_email, c.agent_name, c.status, c.is_site_customer, c.created_at, c.updated_at, c.tags
+      GROUP BY c.id, c.conversation_id, c.customer_name, c.customer_phone, c.customer_email, c.agent_name, c.agent_id, c.status, c.is_site_customer, c.created_at, c.updated_at, c.tags
       ORDER BY c.updated_at DESC
     `
     return result
