@@ -1,6 +1,52 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { DatabaseService } from "@/lib/database"
 
+const ATTENDANT_ID_MAP: Record<string, string> = {
+  ZrzsX_BLm_zYqujY: "Adrielli Saturnino",
+  ZuGqFp5N9i3HAKOn: "Amanda Arruda",
+  ZqOw4cIS50M0IyW4: "ANA PAULA GOMES LOPES",
+  ZaZkfnFmogpzCidw: "Ana Paula Prates",
+  Z46pqSA937XAoQjO: "Andresa Oliveira",
+  ZpZ5x2YWiurSWZw_: "Andreyna Jamilly",
+  aGevxChnIrrCytFy: "Arthur Schuster",
+  Z9h9OXksjGcTucYk: "Beatriz Padilha",
+  "ZzUQwM9nj2l-H5hc": "Bruna Machado",
+  "ZQxoyBkRFwc7X-Vk": "Bruna Rosângela dos Santos",
+  ZQs2aJ4vN7Fo16hX: "Cristiane Santos Sousa",
+  ZyJUBxlZDTR81qdF: "Ester Ramos",
+  ZUJgEEM61MILCE6B: "Eticléia Kletenberg",
+  ZjjGI2sLFms4kT6b: "Evylin Costa",
+  aFFip8ABDpdShgl3: "Fernando Marcelino",
+  aDcasDM8VecglMU4: "Francilaine Rosa de Oliveira",
+  aIdfZQQTEBXedrzj: "Helena Alves Iung",
+  "aD7okTM8Vecg3G1-": "Henry Fernandes dos Santos",
+  ZUqcbp8LSKZvEHKO: "Isabella Reis TAcone",
+  ZaZlLHFmogpzC4xO: "Isabelle de Oliveira Guedes",
+  ZnBo4KBvCrAoRT56: "Janaina Dos Santos",
+  ZuM910xPuHH0Z4NR: "Janara Luana Copeti Teixeira",
+  "ZdNO23Q4rBq-DxKh": "Josieli",
+  ZoWIY_xoe7uoAAFQ: "JULIA PERES 💙",
+  "ZhqqOckvKCw7mn-Q": "Karen Letícia Nunes de Ligório",
+  ZaWZx3FmogpzwtWC: "Karol 💙",
+  ZUqdQrpYzCuTYlfc: "Karol Machado",
+  Z26n85VVIK64B6I2: "kenia silva veiga",
+  aFFuZrRwYlNQFerQ: "Lauren Silva",
+  "aIdeEFZU5Fky-Vn9": "Leticia Sodre Martins",
+  ZZa0ntkTVi0FYtgX: "Lisiane Dalla Valle",
+  Zh5z4PF4WJRRo2nW: "Manoela Bernardi",
+  "ZVZw4gRb-aIPaG_P": "Manuella Machado Cardoso",
+  "Z-58KqwE7WFOphQ5": "Maria Julia Luiz de Sousa",
+  Zafi39QwFgY3PIe3: "Micheli Castilhos",
+  Z5e_UnhziN5VdCCp: "Micheli.M 💙",
+  aHag2aBiUL3ZL491: "Mirian Lemos",
+  ZUJNRXU0Fyap2HPj: "Paola Davila Sagaz",
+  "ZW-E1ydfRz6GV84t": "Patricia Pereira",
+  aGLM6y5Rf4uSOv3n: "Pedro Moura",
+  ZaWboNQwFgY3oMeT: "Robson",
+  Z5uC3bNiUwFwQ1Dx: "Sarah Vieira",
+  Z_6kBb9UhCDQ52dN: "Wanessa Garcia",
+}
+
 interface UmblerContact {
   Name?: string
   PhoneNumber?: string
@@ -35,77 +81,70 @@ function extractAgentInfo(chatData: UmblerChatData, lastMessage: UmblerMessage):
   console.log("🔍 === EXTRACTING AGENT INFO (NAME + ID) ===")
 
   try {
-    // 1. Try to get agent from LastOrganizationMember.Id in OrganizationMembers array
-    if (
-      chatData.LastOrganizationMember?.Id &&
-      Array.isArray(chatData.OrganizationMembers) &&
-      chatData.OrganizationMembers.length > 0
-    ) {
+    if (chatData.LastOrganizationMember?.Id) {
       const memberId = chatData.LastOrganizationMember.Id
-      const member = chatData.OrganizationMembers.find((m) => m.Id === memberId)
-      if (member) {
-        const agentName = member.Name || member.DisplayName
-        if (agentName && agentName.trim()) {
-          console.log(`✅ Agent found by LastOrganizationMember.Id: ${agentName} (ID: ${memberId})`)
-          return { name: agentName.trim(), id: memberId }
-        }
+      const attendantName = ATTENDANT_ID_MAP[memberId]
+      if (attendantName) {
+        console.log(`✅ Agent found by ID mapping: ${attendantName} (ID: ${memberId})`)
+        return { name: attendantName, id: memberId }
       }
-      // Even if no name found, we have the ID
-      console.log(`⚠️ Agent ID found but no name: ${memberId}`)
+      console.log(`⚠️ Agent ID not found in mapping: ${memberId}`)
       return { name: `Agente-${memberId}`, id: memberId }
     }
 
-    // 2. Try to get agent from message sender (for agent messages)
     const sourceValue = (lastMessage.Source || "").toLowerCase()
     if (sourceValue === "agent" || sourceValue === "member") {
+      if (lastMessage.Sender?.Id) {
+        const senderId = lastMessage.Sender.Id
+        const attendantName = ATTENDANT_ID_MAP[senderId]
+        if (attendantName) {
+          console.log(`✅ Agent found by sender ID mapping: ${attendantName} (ID: ${senderId})`)
+          return { name: attendantName, id: senderId }
+        }
+      }
+      // Fallback to sender name if ID not in mapping
       if (lastMessage.Sender?.Name) {
         const senderId = lastMessage.Sender?.Id || null
         console.log(`✅ Agent found from message sender: ${lastMessage.Sender.Name} (ID: ${senderId})`)
         return { name: lastMessage.Sender.Name.trim(), id: senderId }
       }
-      if (lastMessage.Sender?.DisplayName) {
-        const senderId = lastMessage.Sender?.Id || null
-        console.log(
-          `✅ Agent found from message sender DisplayName: ${lastMessage.Sender.DisplayName} (ID: ${senderId})`,
-        )
-        return { name: lastMessage.Sender.DisplayName.trim(), id: senderId }
-      }
     }
 
-    // 3. Try OrganizationMember.Id (single member)
     if (chatData.OrganizationMember?.Id) {
       const memberId = chatData.OrganizationMember.Id
-      // Try to find name in OrganizationMembers array
-      if (Array.isArray(chatData.OrganizationMembers) && chatData.OrganizationMembers.length > 0) {
-        const member = chatData.OrganizationMembers.find((m) => m.Id === memberId)
-        if (member && (member.Name || member.DisplayName)) {
-          const agentName = member.Name || member.DisplayName
-          console.log(`✅ Agent found by OrganizationMember.Id: ${agentName} (ID: ${memberId})`)
-          return { name: agentName.trim(), id: memberId }
-        }
+      const attendantName = ATTENDANT_ID_MAP[memberId]
+      if (attendantName) {
+        console.log(`✅ Agent found by OrganizationMember ID mapping: ${attendantName} (ID: ${memberId})`)
+        return { name: attendantName, id: memberId }
       }
-      console.log(`⚠️ Using OrganizationMember ID as fallback: ${memberId}`)
+      console.log(`⚠️ OrganizationMember ID not found in mapping: ${memberId}`)
       return { name: `Agente-${memberId}`, id: memberId }
     }
 
-    // 4. Try Setor field (department/sector) - no ID available
+    if (Array.isArray(chatData.OrganizationMembers) && chatData.OrganizationMembers.length > 0) {
+      for (const member of chatData.OrganizationMembers) {
+        if (member.Id && ATTENDANT_ID_MAP[member.Id]) {
+          const attendantName = ATTENDANT_ID_MAP[member.Id]
+          console.log(`✅ Agent found in OrganizationMembers by ID mapping: ${attendantName} (ID: ${member.Id})`)
+          return { name: attendantName, id: member.Id }
+        }
+      }
+      // Fallback to first member with name
+      const firstMember = chatData.OrganizationMembers[0]
+      const agentName = firstMember.Name || firstMember.DisplayName
+      if (agentName && agentName.trim()) {
+        console.log(`✅ Agent found from first OrganizationMember: ${agentName} (ID: ${firstMember.Id})`)
+        return { name: agentName.trim(), id: firstMember.Id || null }
+      }
+    }
+
+    // Priority 5: Try Setor field (department/sector) - no ID available
     if (chatData.Setor && typeof chatData.Setor === "string" && chatData.Setor.trim()) {
       console.log(`✅ Agent found from Setor: ${chatData.Setor} (no ID available)`)
       return { name: chatData.Setor.trim(), id: null }
     }
 
-    // 5. Try first available member in OrganizationMembers
-    if (Array.isArray(chatData.OrganizationMembers) && chatData.OrganizationMembers.length > 0) {
-      const firstMember = chatData.OrganizationMembers[0]
-      const agentName = firstMember.Name || firstMember.DisplayName
-      const agentId = firstMember.Id
-      if (agentName && agentName.trim()) {
-        console.log(`✅ Agent found from first OrganizationMember: ${agentName} (ID: ${agentId})`)
-        return { name: agentName.trim(), id: agentId || null }
-      }
-    }
-
-    // 6. Final fallback
+    // Final fallback
     console.log("❌ No agent information found, using default")
     return { name: "Atendente", id: null }
   } catch (error) {
