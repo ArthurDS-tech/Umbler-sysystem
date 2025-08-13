@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     customer_email VARCHAR(255),
     agent_name VARCHAR(255),
     status VARCHAR(50) DEFAULT 'active',
+    is_site_customer BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
