@@ -65,24 +65,54 @@ export async function POST(request: NextRequest) {
         if (chatData.LastOrganizationMember?.Id && chatData.OrganizationMembers) {
           console.log("🔍 Buscando por ID:", chatData.LastOrganizationMember.Id)
           const member = chatData.OrganizationMembers.find((m: any) => m.Id === chatData.LastOrganizationMember?.Id)
-          if (member?.Name || member?.DisplayName) {
-            const agentName = member.Name || member.DisplayName
-            console.log("✅ Agente encontrado em OrganizationMembers:", agentName)
-            return agentName
+          if (member) {
+            console.log("🔍 Membro encontrado:", JSON.stringify(member, null, 2))
+
+            // Priorizar Name, depois DisplayName, depois usar o ID
+            if (member.Name && member.Name.trim()) {
+              console.log("✅ Agente encontrado - Name:", member.Name)
+              return member.Name.trim()
+            }
+            if (member.DisplayName && member.DisplayName.trim()) {
+              console.log("✅ Agente encontrado - DisplayName:", member.DisplayName)
+              return member.DisplayName.trim()
+            }
+            // Se não tem nome, usar o ID como identificação
+            console.log("⚠️ Usando ID como nome do agente:", member.Id)
+            return `Agente-${member.Id}`
           }
-          console.log("⚠️ Membro encontrado mas sem Name/DisplayName:", member)
+          console.log("⚠️ Membro não encontrado na lista OrganizationMembers")
         }
 
-        // 2. Fallback para setor se disponível
-        if (chatData.Sector?.Name) {
-          const sectorAgent = `Atendente ${chatData.Sector.Name}`
+        // 2. Tentar usar LastOrganizationMember.Id diretamente se disponível
+        if (chatData.LastOrganizationMember?.Id) {
+          console.log("✅ Usando LastOrganizationMember.Id:", chatData.LastOrganizationMember.Id)
+          return `Agente-${chatData.LastOrganizationMember.Id}`
+        }
+
+        // 3. Fallback para setor se disponível
+        if (chatData.Sector?.Name && chatData.Sector.Name.trim()) {
+          const sectorAgent = `Setor-${chatData.Sector.Name.trim()}`
           console.log("✅ Usando setor como fallback:", sectorAgent)
           return sectorAgent
         }
 
-        // 3. Fallback final
-        console.log("⚠️ Usando fallback final: Atendente")
-        return "Atendente"
+        // 4. Verificar se há algum OrganizationMember disponível
+        if (chatData.OrganizationMembers && chatData.OrganizationMembers.length > 0) {
+          const firstMember = chatData.OrganizationMembers[0]
+          if (firstMember.Name && firstMember.Name.trim()) {
+            console.log("✅ Usando primeiro membro disponível:", firstMember.Name)
+            return firstMember.Name.trim()
+          }
+          if (firstMember.Id) {
+            console.log("✅ Usando ID do primeiro membro:", firstMember.Id)
+            return `Agente-${firstMember.Id}`
+          }
+        }
+
+        // 5. Fallback final - NUNCA usar nome da conversa ou cliente
+        console.log("⚠️ Usando fallback final: Sistema")
+        return "Sistema"
       }
 
       let agent_name: string
@@ -205,11 +235,26 @@ export async function POST(request: NextRequest) {
       let new_agent = "Sistema"
       if (chatData.LastOrganizationMember?.Id && chatData.OrganizationMembers) {
         const member = chatData.OrganizationMembers.find((m: any) => m.Id === chatData.LastOrganizationMember?.Id)
-        if (member?.Name || member?.DisplayName) {
-          new_agent = member.Name || member.DisplayName
+        if (member) {
+          if (member.Name && member.Name.trim()) {
+            new_agent = member.Name.trim()
+          } else if (member.DisplayName && member.DisplayName.trim()) {
+            new_agent = member.DisplayName.trim()
+          } else {
+            new_agent = `Agente-${member.Id}`
+          }
         }
-      } else if (chatData.Sector?.Name) {
-        new_agent = `Atendente ${chatData.Sector.Name}`
+      } else if (chatData.LastOrganizationMember?.Id) {
+        new_agent = `Agente-${chatData.LastOrganizationMember.Id}`
+      } else if (chatData.Sector?.Name && chatData.Sector.Name.trim()) {
+        new_agent = `Setor-${chatData.Sector.Name.trim()}`
+      } else if (chatData.OrganizationMembers && chatData.OrganizationMembers.length > 0) {
+        const firstMember = chatData.OrganizationMembers[0]
+        if (firstMember.Name && firstMember.Name.trim()) {
+          new_agent = firstMember.Name.trim()
+        } else if (firstMember.Id) {
+          new_agent = `Agente-${firstMember.Id}`
+        }
       }
 
       await DatabaseService.updateConversationAgent(conversation_id, new_agent)
