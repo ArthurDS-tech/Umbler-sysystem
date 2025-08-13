@@ -4,7 +4,8 @@ import { DatabaseService } from "@/lib/database"
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    console.log("🔄 Webhook Umbler recebido:", JSON.stringify(body, null, 2))
+    console.log("🔄 === WEBHOOK UMBLER RECEBIDO ===")
+    console.log("📝 Dados completos:", JSON.stringify(body, null, 2))
 
     const { Type, EventDate, Payload, EventId } = body
 
@@ -31,10 +32,21 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      console.log("🔍 === DEBUG DADOS COMPLETOS ===")
+      console.log("🔍 === ANÁLISE DETALHADA DOS DADOS ===")
       console.log("📝 lastMessage:", JSON.stringify(lastMessage, null, 2))
       console.log("👤 chatData.Contact:", JSON.stringify(chatData.Contact, null, 2))
       console.log("🎧 chatData.OrganizationMember:", JSON.stringify(chatData.OrganizationMember, null, 2))
+      
+      // Verificar se há outros campos que possam conter informações do agente
+      console.log("🔍 chatData (todos os campos):", Object.keys(chatData))
+      console.log("🔍 lastMessage (todos os campos):", Object.keys(lastMessage))
+      
+      // Verificar campos específicos que podem conter o nome do agente
+      if (chatData.Member) console.log("👤 chatData.Member:", JSON.stringify(chatData.Member, null, 2))
+      if (chatData.Agent) console.log("👤 chatData.Agent:", JSON.stringify(chatData.Agent, null, 2))
+      if (chatData.AssignedTo) console.log("👤 chatData.AssignedTo:", JSON.stringify(chatData.AssignedTo, null, 2))
+      if (lastMessage.Agent) console.log("👤 lastMessage.Agent:", JSON.stringify(lastMessage.Agent, null, 2))
+      if (lastMessage.Sender) console.log("👤 lastMessage.Sender:", JSON.stringify(lastMessage.Sender, null, 2))
 
       const conversation_id = chatData.Id
       const customer_name = chatData.Contact?.Name || "Cliente"
@@ -50,7 +62,7 @@ export async function POST(request: NextRequest) {
 
       console.log("📊 sender_type:", sender_type)
 
-      // Captura inteligente do nome do atendente
+      // Captura inteligente do nome do atendente - MÉTODO MELHORADO
       let agent_name = "Sistema"
       let sender_name: string
 
@@ -63,11 +75,20 @@ export async function POST(request: NextRequest) {
           lastMessage.Member?.FirstName ||
           lastMessage.Member?.Username ||
           lastMessage.Member?.Email ||
+          lastMessage.Agent?.Name ||
+          lastMessage.Agent?.DisplayName ||
+          lastMessage.Sender?.Name ||
+          lastMessage.Sender?.DisplayName ||
           "Atendente"
 
         sender_name = agent_name
         
-        console.log("🎧 Nome do atendente (enviando):", agent_name)
+        console.log("🎧 === NOME DO ATENDENTE (ENVIANDO) ===")
+        console.log("lastMessage.Member?.Name:", lastMessage.Member?.Name)
+        console.log("lastMessage.Member?.DisplayName:", lastMessage.Member?.DisplayName)
+        console.log("lastMessage.Agent?.Name:", lastMessage.Agent?.Name)
+        console.log("lastMessage.Sender?.Name:", lastMessage.Sender?.Name)
+        console.log("✅ Nome final:", agent_name)
       } else {
         // Para mensagens de cliente: usar agente responsável pela conversa
         agent_name = 
@@ -77,11 +98,23 @@ export async function POST(request: NextRequest) {
           chatData.OrganizationMember?.FirstName ||
           chatData.OrganizationMember?.Username ||
           chatData.OrganizationMember?.Email ||
+          chatData.Member?.Name ||
+          chatData.Member?.DisplayName ||
+          chatData.Agent?.Name ||
+          chatData.Agent?.DisplayName ||
+          chatData.AssignedTo?.Name ||
+          chatData.AssignedTo?.DisplayName ||
           "Sistema"
         
         sender_name = customer_name
         
-        console.log("👤 Agente responsável pela conversa:", agent_name)
+        console.log("👤 === AGENTE RESPONSÁVEL PELA CONVERSA ===")
+        console.log("chatData.OrganizationMember?.Name:", chatData.OrganizationMember?.Name)
+        console.log("chatData.OrganizationMember?.DisplayName:", chatData.OrganizationMember?.DisplayName)
+        console.log("chatData.Member?.Name:", chatData.Member?.Name)
+        console.log("chatData.Agent?.Name:", chatData.Agent?.Name)
+        console.log("chatData.AssignedTo?.Name:", chatData.AssignedTo?.Name)
+        console.log("✅ Nome final:", agent_name)
       }
 
       const message_text = lastMessage.Content || "🎵 Mensagem de áudio ou arquivo"
