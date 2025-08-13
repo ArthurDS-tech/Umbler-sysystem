@@ -118,28 +118,44 @@ function detectAndProcessTags(messageText: string, conversationId: string, chatD
   const detectedTags: string[] = []
 
   try {
-    // Detect tag addition messages from Umbler system
-    const tagAddedPattern = /etiqueta adicionada na conversa[:\s]*([^.\n]+)/i
-    const tagAddedMatch = messageText.match(tagAddedPattern)
+    // Detect tag addition messages from Umbler system - multiple patterns
+    const tagAddedPatterns = [
+      /etiqueta adicionada na conversa[:\s]*([^.\n]+)/i,
+      /tag adicionada[:\s]*([^.\n]+)/i,
+      /adicionada a etiqueta[:\s]*([^.\n]+)/i,
+      /nova etiqueta[:\s]*([^.\n]+)/i,
+    ]
 
-    if (tagAddedMatch) {
-      const tagName = tagAddedMatch[1].trim()
-      console.log(`🏷️ Tag detectada: "${tagName}" na conversa ${conversationId}`)
-      detectedTags.push(tagName)
+    for (const pattern of tagAddedPatterns) {
+      const match = messageText.match(pattern)
+      if (match) {
+        const tagName = match[1].trim()
+        console.log(`🏷️ Tag detectada: "${tagName}" na conversa ${conversationId}`)
+        detectedTags.push(tagName)
+        break // Only process first match to avoid duplicates
+      }
     }
 
-    // Detect tag removal messages from Umbler system
-    const tagRemovedPattern = /etiqueta removida da conversa[:\s]*([^.\n]+)/i
-    const tagRemovedMatch = messageText.match(tagRemovedPattern)
+    // Detect tag removal messages from Umbler system - multiple patterns
+    const tagRemovedPatterns = [
+      /etiqueta removida da conversa[:\s]*([^.\n]+)/i,
+      /tag removida[:\s]*([^.\n]+)/i,
+      /removida a etiqueta[:\s]*([^.\n]+)/i,
+      /etiqueta exclu[íi]da[:\s]*([^.\n]+)/i,
+    ]
 
-    if (tagRemovedMatch) {
-      const tagName = tagRemovedMatch[1].trim()
-      console.log(`🏷️ Tag removida: "${tagName}" da conversa ${conversationId}`)
-      detectedTags.push(`REMOVE:${tagName}`)
+    for (const pattern of tagRemovedPatterns) {
+      const match = messageText.match(pattern)
+      if (match) {
+        const tagName = match[1].trim()
+        console.log(`🏷️ Tag removida: "${tagName}" da conversa ${conversationId}`)
+        detectedTags.push(`REMOVE:${tagName}`)
+        break // Only process first match to avoid duplicates
+      }
     }
 
     // Also check for tags in the chatData.Tags field if available
-    if (Array.isArray(chatData.Tags)) {
+    if (Array.isArray(chatData.Tags) && chatData.Tags.length > 0) {
       chatData.Tags.forEach((tag: string) => {
         if (tag && tag.trim()) {
           console.log(`🏷️ Tag do chatData: "${tag}" na conversa ${conversationId}`)
@@ -168,6 +184,90 @@ async function processTags(conversationId: string, tags: string[]) {
     } catch (error) {
       console.error(`❌ Erro ao processar tag "${tag}":`, error)
     }
+  }
+}
+
+function detectChatClosure(messageText: string): { isClosed: boolean; closedBy: string | null } {
+  try {
+    const chatClosedPattern = /chat finalizado pelo atendente\s+(.+?)(?:\.|$|\n)/i
+    const chatClosedMatch = messageText.match(chatClosedPattern)
+
+    if (chatClosedMatch) {
+      const attendantName = chatClosedMatch[1].trim()
+      console.log(`🔚 Chat finalizado detectado pelo atendente: "${attendantName}"`)
+      return { isClosed: true, closedBy: attendantName }
+    }
+
+    // Also check for other closure patterns
+    const otherClosurePatterns = [
+      /conversa finalizada por\s+(.+?)(?:\.|$|\n)/i,
+      /atendimento encerrado por\s+(.+?)(?:\.|$|\n)/i,
+      /chat encerrado pelo?\s+(.+?)(?:\.|$|\n)/i,
+      /finalizado pelo atendente\s+(.+?)(?:\.|$|\n)/i,
+    ]
+
+    for (const pattern of otherClosurePatterns) {
+      const match = messageText.match(pattern)
+      if (match) {
+        const attendantName = match[1].trim()
+        console.log(`🔚 Chat finalizado detectado (padrão alternativo) pelo atendente: "${attendantName}"`)
+        return { isClosed: true, closedBy: attendantName }
+      }
+    }
+
+    return { isClosed: false, closedBy: null }
+  } catch (error) {
+    console.error("❌ Error detecting chat closure:", error)
+    return { isClosed: false, closedBy: null }
+  }
+}
+
+function detectSiteCustomer(messageText: string, chatData: UmblerChatData): boolean {
+  try {
+    const lowerMessage = messageText.toLowerCase()
+
+    // Common patterns that indicate a customer came from the website
+    const sitePatterns = [
+      /ol[aá],?\s*vim do site/i,
+      /ol[aá],?\s*encontrei voc[eê]s no site/i,
+      /vi no site/i,
+      /encontrei no site/i,
+      /pelo site/i,
+      /atrav[eé]s do site/i,
+      /formulário do site/i,
+      /contato do site/i,
+      /p[aá]gina web/i,
+      /website/i,
+      /marcelino.*site/i,
+      /site.*marcelino/i,
+    ]
+
+    // Check message content for site indicators
+    for (const pattern of sitePatterns) {
+      if (pattern.test(lowerMessage)) {
+        console.log(`🌐 Cliente do site detectado por padrão: "${pattern.source}"`)
+        return true
+      }
+    }
+
+    // Check if there are specific tags that indicate site customer
+    if (Array.isArray(chatData.Tags)) {
+      const siteTags = ["site", "website", "web", "online", "formulario", "contato-site"]
+      for (const tag of chatData.Tags) {
+        if (siteTags.some((siteTag) => tag.toLowerCase().includes(siteTag))) {
+          console.log(`🌐 Cliente do site detectado por tag: "${tag}"`)
+          return true
+        }
+      }
+    }
+
+    // Check contact source or other indicators
+    // You can add more sophisticated logic here based on your needs
+
+    return false
+  } catch (error) {
+    console.error("❌ Error detecting site customer:", error)
+    return false
   }
 }
 
@@ -253,13 +353,22 @@ export async function POST(request: NextRequest) {
       console.log("=====================================")
 
       const message_text = lastMessage.Content || "🎵 Mensagem de áudio ou arquivo"
-      const isSiteCustomer = message_text.toLowerCase().includes("olá, vim do site do marcelino")
 
-      console.log("🌐 === DETECÇÃO CLIENTE SITE ===")
+      const isSiteCustomer = detectSiteCustomer(message_text, chatData)
+
+      console.log("🌐 === DETECÇÃO CLIENTE SITE MELHORADA ===")
       console.log("📝 Mensagem:", message_text.substring(0, 100))
+      console.log("🏷️ Tags disponíveis:", chatData.Tags || [])
       console.log("🔍 É cliente do site?", isSiteCustomer ? "✅ SIM" : "❌ NÃO")
 
-      console.log("🏷️ === PROCESSAMENTO DE ETIQUETAS ===")
+      console.log("🔚 === DETECÇÃO FINALIZAÇÃO DE CHAT ===")
+      const chatClosure = detectChatClosure(message_text)
+      console.log(`🔍 Chat finalizado?`, chatClosure.isClosed ? "✅ SIM" : "❌ NÃO")
+      if (chatClosure.isClosed) {
+        console.log(`👤 Finalizado por: "${chatClosure.closedBy}"`)
+      }
+
+      console.log("🏷️ === PROCESSAMENTO DE ETIQUETAS MELHORADO ===")
       const detectedTags = detectAndProcessTags(message_text, conversation_id, chatData)
       console.log(`🏷️ Tags detectadas: ${detectedTags.length > 0 ? detectedTags.join(", ") : "Nenhuma"}`)
 
@@ -272,6 +381,13 @@ export async function POST(request: NextRequest) {
         agent_id,
         is_site_customer: isSiteCustomer,
       })
+
+      if (chatClosure.isClosed) {
+        await DatabaseService.updateConversationStatus(conversation_id, "closed")
+        console.log(
+          `✅ Chat marcado como finalizado - Conversa: ${conversation_id}, Finalizado por: ${chatClosure.closedBy}`,
+        )
+      }
 
       if (detectedTags.length > 0) {
         await processTags(conversation_id, detectedTags)
@@ -331,6 +447,8 @@ export async function POST(request: NextRequest) {
         agent_id,
         is_site_customer: isSiteCustomer,
         detected_tags: detectedTags,
+        chat_closed: chatClosure.isClosed,
+        closed_by: chatClosure.closedBy,
         event_id: EventId,
         processed_at: new Date().toISOString(),
       })
