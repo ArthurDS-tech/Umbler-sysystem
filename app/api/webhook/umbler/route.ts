@@ -34,8 +34,9 @@ export async function POST(request: NextRequest) {
       console.log("🔍 === DEBUG DADOS COMPLETOS ===")
       console.log("📝 lastMessage:", JSON.stringify(lastMessage, null, 2))
       console.log("👤 chatData.Contact:", JSON.stringify(chatData.Contact, null, 2))
-      console.log("🎧 chatData.OrganizationMember:", JSON.stringify(chatData.OrganizationMember, null, 2))
-      console.log("👥 chatData.OrganizationMembers:", JSON.stringify(chatData.OrganizationMembers, null, 2))
+      console.log("🎧 chatData.OrganizationMembers:", JSON.stringify(chatData.OrganizationMembers, null, 2))
+      console.log("🎧 chatData.LastOrganizationMember:", JSON.stringify(chatData.LastOrganizationMember, null, 2))
+      console.log("🏢 chatData.Sector:", JSON.stringify(chatData.Sector, null, 2))
 
       const conversation_id = chatData.Id
       const customer_name = chatData.Contact?.Name || "Cliente"
@@ -47,63 +48,48 @@ export async function POST(request: NextRequest) {
       console.log("📊 Source processado:", sourceValue)
 
       let sender_type: "customer" | "agent"
-      
-      // Lógica mais robusta para determinar o tipo de remetente
       if (sourceValue === "contact" || sourceValue === "customer") {
         sender_type = "customer"
-        console.log("📊 Remetente identificado como CLIENTE pelo Source")
       } else if (sourceValue === "agent" || sourceValue === "member" || sourceValue === "organizationmember") {
         sender_type = "agent"
-        console.log("📊 Remetente identificado como AGENTE pelo Source")
       } else {
-        // Fallback mais inteligente baseado na estrutura do webhook
-        // Se não temos Source claro, verificar se há informações de agente
-        const hasAgentInfo = chatData.LastOrganizationMember?.Id || 
-                           chatData.OrganizationMember?.Id ||
-                           chatData.OrganizationMembers?.length > 0
-        
-        if (hasAgentInfo && sourceValue !== "contact") {
-          sender_type = "agent"
-          console.log("📊 Remetente identificado como AGENTE por fallback (estrutura)")
-        } else {
-          sender_type = "customer"
-          console.log("📊 Remetente identificado como CLIENTE por fallback")
-        }
+        sender_type = chatData.LastOrganizationMember?.Id ? "agent" : "customer"
       }
 
       console.log("📊 sender_type determinado:", sender_type)
 
-      let agent_name: string
-      let sender_name: string
+      const extractAgentName = (): string => {
+        console.log("🔍 === EXTRAINDO NOME DO AGENTE ===")
 
-      // Função para extrair nome do agente da estrutura correta
-      const extractAgentName = () => {
-        // Tentar extrair do LastOrganizationMember se disponível
-        if (chatData.LastOrganizationMember?.Id) {
-          // Buscar nos OrganizationMembers pelo ID
-          const member = chatData.OrganizationMembers?.find(
-            (m: any) => m.Id === chatData.LastOrganizationMember?.Id
-          )
+        // 1. Buscar em OrganizationMembers usando LastOrganizationMember.Id
+        if (chatData.LastOrganizationMember?.Id && chatData.OrganizationMembers) {
+          console.log("🔍 Buscando por ID:", chatData.LastOrganizationMember.Id)
+          const member = chatData.OrganizationMembers.find((m: any) => m.Id === chatData.LastOrganizationMember?.Id)
           if (member?.Name || member?.DisplayName) {
-            return member.Name || member.DisplayName
+            const agentName = member.Name || member.DisplayName
+            console.log("✅ Agente encontrado em OrganizationMembers:", agentName)
+            return agentName
           }
+          console.log("⚠️ Membro encontrado mas sem Name/DisplayName:", member)
         }
-        
-        // Fallback para OrganizationMember se disponível
-        if (chatData.OrganizationMember?.Name || chatData.OrganizationMember?.DisplayName) {
-          return chatData.OrganizationMember.Name || chatData.OrganizationMember.DisplayName
-        }
-        
-        // Se não conseguir extrair, usar um nome padrão baseado no setor
+
+        // 2. Fallback para setor se disponível
         if (chatData.Sector?.Name) {
-          return `Atendente ${chatData.Sector.Name}`
+          const sectorAgent = `Atendente ${chatData.Sector.Name}`
+          console.log("✅ Usando setor como fallback:", sectorAgent)
+          return sectorAgent
         }
-        
+
+        // 3. Fallback final
+        console.log("⚠️ Usando fallback final: Atendente")
         return "Atendente"
       }
 
+      let agent_name: string
+      let sender_name: string
+
       if (sender_type === "agent") {
-        // Para mensagens de agente: quem enviou é o atendente
+        // Para mensagens de agente: extrair nome corretamente
         agent_name = extractAgentName()
         sender_name = agent_name
       } else {
@@ -112,11 +98,11 @@ export async function POST(request: NextRequest) {
         sender_name = customer_name
       }
 
-      console.log("✅ === RESULTADO FINAL SIMPLIFICADO ===")
+      console.log("✅ === RESULTADO FINAL ===")
       console.log(`📊 sender_type: "${sender_type}"`)
       console.log(`👤 sender_name: "${sender_name}"`)
       console.log(`🎧 agent_name: "${agent_name}"`)
-      console.log("=====================================")
+      console.log("==========================")
 
       const message_text = lastMessage.Content || "🎵 Mensagem de áudio ou arquivo"
       const isSiteCustomer = message_text.toLowerCase().includes("olá, vim do site do marcelino")
@@ -211,6 +197,33 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    if (Type === "MemberTransfer") {
+      const conversation_id = Payload.Content.Id
+      const chatData = Payload.Content
+
+      // Usar a mesma lógica de extração do nome do agente
+      let new_agent = "Sistema"
+      if (chatData.LastOrganizationMember?.Id && chatData.OrganizationMembers) {
+        const member = chatData.OrganizationMembers.find((m: any) => m.Id === chatData.LastOrganizationMember?.Id)
+        if (member?.Name || member?.DisplayName) {
+          new_agent = member.Name || member.DisplayName
+        }
+      } else if (chatData.Sector?.Name) {
+        new_agent = `Atendente ${chatData.Sector.Name}`
+      }
+
+      await DatabaseService.updateConversationAgent(conversation_id, new_agent)
+      console.log(`✅ Transferência processada - Conversa: ${conversation_id}, Novo agente: ${new_agent}`)
+      return NextResponse.json({
+        success: true,
+        message: "Transferência processada",
+        event_type: Type,
+        conversation_id,
+        new_agent,
+        event_id: EventId,
+      })
+    }
+
     // Resto do código permanece igual para outros tipos de evento...
     if (Type === "ChatClosed") {
       const conversation_id = Payload.Content.Id
@@ -221,24 +234,6 @@ export async function POST(request: NextRequest) {
         message: "Chat fechado processado",
         event_type: Type,
         conversation_id,
-        event_id: EventId,
-      })
-    }
-
-    if (Type === "MemberTransfer") {
-      const conversation_id = Payload.Content.Id
-      // Corrigir para usar a estrutura correta
-      const new_agent = Payload.Content.OrganizationMember?.Name || 
-                       Payload.Content.OrganizationMember?.DisplayName ||
-                       "Sistema"
-      await DatabaseService.updateConversationAgent(conversation_id, new_agent)
-      console.log(`✅ Transferência processada - Conversa: ${conversation_id}, Novo agente: ${new_agent}`)
-      return NextResponse.json({
-        success: true,
-        message: "Transferência processada",
-        event_type: Type,
-        conversation_id,
-        new_agent,
         event_id: EventId,
       })
     }
