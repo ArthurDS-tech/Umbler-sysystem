@@ -1,121 +1,15 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { DatabaseService } from "@/lib/database"
 
-function extractAgentInfo(chatData: any, lastMessage: any): { name: string; id: string | null } {
-  // 1. Try LastOrganizationMember.Id in OrganizationMembers array
-  if (chatData.LastOrganizationMember?.Id && chatData.OrganizationMembers?.length > 0) {
-    const memberId = chatData.LastOrganizationMember.Id
-    const member = chatData.OrganizationMembers.find((m: any) => m.Id === memberId)
-    if (member) {
-      const agentName = member.Name || member.DisplayName
-      if (agentName && agentName.trim()) {
-        return {
-          name: agentName.trim(),
-          id: memberId,
-        }
-      }
-    }
-    return { name: `Agente-${memberId}`, id: memberId }
-  }
-
-  // 2. Try message sender for agent messages
-  if (lastMessage.Source?.toLowerCase() === "agent" || lastMessage.Source?.toLowerCase() === "member") {
-    if (lastMessage.Sender?.Name) {
-      const senderId = lastMessage.Sender?.Id || null
-      return {
-        name: lastMessage.Sender.Name.trim(),
-        id: senderId,
-      }
-    }
-    if (lastMessage.Sender?.DisplayName) {
-      const senderId = lastMessage.Sender?.Id || null
-      return {
-        name: lastMessage.Sender.DisplayName.trim(),
-        id: senderId,
-      }
-    }
-  }
-
-  // 3. Try OrganizationMember.Id
-  if (chatData.OrganizationMember?.Id) {
-    const memberId = chatData.OrganizationMember.Id
-    if (chatData.OrganizationMembers?.length > 0) {
-      const member = chatData.OrganizationMembers.find((m: any) => m.Id === memberId)
-      if (member && (member.Name || member.DisplayName)) {
-        const agentName = member.Name || member.DisplayName
-        return {
-          name: agentName.trim(),
-          id: memberId,
-        }
-      }
-    }
-    return { name: `Agente-${memberId}`, id: memberId }
-  }
-
-  // 4. Try Setor field
-  if (chatData.Setor && typeof chatData.Setor === "string" && chatData.Setor.trim()) {
-    return {
-      name: chatData.Setor.trim(),
-      id: null,
-    }
-  }
-
-  // 5. Try first available member
-  if (chatData.OrganizationMembers?.length > 0) {
-    const firstMember = chatData.OrganizationMembers[0]
-    const agentName = firstMember.Name || firstMember.DisplayName
-    const agentId = firstMember.Id
-    if (agentName && agentName.trim()) {
-      return {
-        name: agentName.trim(),
-        id: agentId || null,
-      }
-    }
-  }
-
-  return { name: "Atendente", id: null }
-}
-
-function detectAndProcessTags(messageText: string, chatData: any): string[] {
-  const detectedTags: string[] = []
-
-  // Detect tag messages from Umbler
-  const tagAddedPattern = /etiqueta adicionada na conversa[:\s]*([^.\n]+)/i
-  const tagAddedMatch = messageText.match(tagAddedPattern)
-  if (tagAddedMatch) {
-    detectedTags.push(tagAddedMatch[1].trim())
-  }
-
-  // Check chatData.Tags
-  if (chatData.Tags && Array.isArray(chatData.Tags)) {
-    chatData.Tags.forEach((tag: string) => {
-      if (tag && tag.trim()) {
-        detectedTags.push(tag.trim())
-      }
-    })
-  }
-
-  return detectedTags
-}
-
-async function processTags(conversationId: string, tags: string[]) {
-  for (const tag of tags) {
-    try {
-      await DatabaseService.addTagToConversation(conversationId, tag)
-    } catch (error) {
-      console.error(`Erro ao processar tag "${tag}":`, error)
-    }
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    console.log("🔄 Webhook Umbler recebido")
+    console.log("🔄 Webhook Umbler recebido:", JSON.stringify(body, null, 2))
 
     const { Type, EventDate, Payload, EventId } = body
 
     if (!Type || !Payload || !EventId) {
+      console.log("❌ Formato inválido")
       return NextResponse.json(
         { error: "Formato inválido. Esperado: Type, EventDate, Payload, EventId" },
         { status: 400 },
@@ -128,6 +22,7 @@ export async function POST(request: NextRequest) {
       const lastMessage = chatData.LastMessage
 
       if (!chatData.Id || !lastMessage) {
+        console.log("❌ Dados de chat ou mensagem ausentes")
         return NextResponse.json({ error: "Dados de chat ou mensagem ausentes" }, { status: 400 })
       }
 
@@ -136,140 +31,91 @@ export async function POST(request: NextRequest) {
       const customer_phone = chatData.Contact?.PhoneNumber || chatData.Contact?.Phone || null
       const customer_email = chatData.Contact?.Email || null
 
-      // Determine sender type
       const sourceValue = (lastMessage.Source || "").toLowerCase().trim()
       let sender_type: "customer" | "agent"
       if (sourceValue === "contact" || sourceValue === "customer") {
         sender_type = "customer"
-      } else if (sourceValue === "agent" || sourceValue === "member" || sourceValue === "organizationmember") {
-        sender_type = "agent"
       } else {
-        sender_type = sourceValue.includes("member") || sourceValue.includes("agent") ? "agent" : "customer"
+        sender_type = "agent"
       }
 
-      // Extract agent information - simplified
-      const agentInfo = extractAgentInfo(chatData, lastMessage)
-      const agent_name = agentInfo.name
-      const agent_id = agentInfo.id
+      let agent_name = "Atendente"
+      let agent_id: string | null = null
 
-      // Determine sender name
+      if (chatData.Setor && typeof chatData.Setor === "string" && chatData.Setor.trim()) {
+        agent_name = chatData.Setor.trim()
+      } else if (chatData.LastOrganizationMember?.Id) {
+        agent_id = chatData.LastOrganizationMember.Id
+        agent_name = `Agente-${agent_id}`
+      }
+
       const sender_name = sender_type === "agent" ? agent_name : customer_name
-
       const message_text = lastMessage.Content || "🎵 Mensagem de áudio ou arquivo"
       const isSiteCustomer = message_text.toLowerCase().includes("olá, vim do site do marcelino")
 
-      // Process tags
-      const detectedTags = detectAndProcessTags(message_text, chatData)
+      console.log(`📝 Processando: ${conversation_id} - ${sender_type}: ${sender_name}`)
 
-      // Save conversation
-      await DatabaseService.createOrUpdateConversation({
-        conversation_id,
-        customer_name,
-        customer_phone,
-        customer_email,
-        agent_name,
-        agent_id,
-        is_site_customer: isSiteCustomer,
-      })
+      try {
+        await DatabaseService.createOrUpdateConversation({
+          conversation_id,
+          customer_name,
+          customer_phone,
+          customer_email,
+          agent_name,
+          agent_id,
+          is_site_customer: isSiteCustomer,
+        })
 
-      // Process tags if any
-      if (detectedTags.length > 0) {
-        await processTags(conversation_id, detectedTags)
+        const message_id = lastMessage.Id || EventId
+        const message_type = lastMessage.IsPrivate ? "private_note" : "message"
+        const timestamp = new Date(EventDate)
+
+        await DatabaseService.createMessage({
+          conversation_id,
+          message_id,
+          sender_type: sender_type as "customer" | "agent",
+          sender_name,
+          message_text,
+          message_type,
+          timestamp,
+        })
+
+        console.log(`✅ Mensagem salva: ${conversation_id}`)
+
+        return NextResponse.json({
+          success: true,
+          message: "Webhook processado com sucesso",
+          event_type: Type,
+          conversation_id,
+          sender_type,
+          agent_name,
+          event_id: EventId,
+        })
+      } catch (dbError) {
+        console.error("❌ Erro no banco de dados:", dbError)
+        return NextResponse.json({ error: "Erro ao salvar no banco de dados" }, { status: 500 })
       }
-
-      // Save message
-      const message_id = lastMessage.Id || EventId
-      const message_type = lastMessage.IsPrivate ? "private_note" : "message"
-      const timestamp = new Date(EventDate)
-
-      await DatabaseService.createMessage({
-        conversation_id,
-        message_id,
-        sender_type: sender_type as "customer" | "agent",
-        sender_name,
-        message_text,
-        message_type,
-        timestamp,
-      })
-
-      // Calculate response time for agent messages
-      if (sender_type === "agent" && !lastMessage.IsPrivate) {
-        try {
-          const lastCustomerMessage = await DatabaseService.getLastCustomerMessage(conversation_id)
-          if (lastCustomerMessage) {
-            const customerMessageTime = new Date(lastCustomerMessage.timestamp)
-            const agentResponseTime = new Date(EventDate)
-            const responseTimeSeconds = Math.floor((agentResponseTime.getTime() - customerMessageTime.getTime()) / 1000)
-
-            if (responseTimeSeconds > 0) {
-              await DatabaseService.saveResponseTime({
-                conversation_id,
-                customer_message_id: lastCustomerMessage.message_id,
-                agent_message_id: message_id,
-                response_time_seconds: responseTimeSeconds,
-                customer_message_time: customerMessageTime,
-                agent_response_time: agentResponseTime,
-              })
-            }
-          }
-        } catch (error) {
-          console.error("Erro ao calcular tempo de resposta:", error)
-        }
-      }
-
-      console.log(`✅ Mensagem processada - Conversa: ${conversation_id}, Agent: ${agent_name} (ID: ${agent_id})`)
-
-      return NextResponse.json({
-        success: true,
-        message: "Webhook processado com sucesso",
-        event_type: Type,
-        conversation_id,
-        sender_type,
-        agent_name,
-        agent_id,
-        is_site_customer: isSiteCustomer,
-        detected_tags: detectedTags,
-        event_id: EventId,
-      })
     }
 
-    // Process ChatClosed events
     if (Type === "ChatClosed") {
       const conversation_id = Payload.Content.Id
-      await DatabaseService.updateConversationStatus(conversation_id, "closed")
-      console.log(`✅ Chat fechado - Conversa: ${conversation_id}`)
-      return NextResponse.json({
-        success: true,
-        message: "Chat fechado processado",
-        event_type: Type,
-        conversation_id,
-        event_id: EventId,
-      })
+      try {
+        await DatabaseService.updateConversationStatus(conversation_id, "closed")
+        console.log(`✅ Chat fechado: ${conversation_id}`)
+        return NextResponse.json({
+          success: true,
+          message: "Chat fechado processado",
+          event_type: Type,
+          conversation_id,
+          event_id: EventId,
+        })
+      } catch (dbError) {
+        console.error("❌ Erro ao fechar chat:", dbError)
+        return NextResponse.json({ error: "Erro ao fechar chat" }, { status: 500 })
+      }
     }
 
-    // Process MemberTransfer events
-    if (Type === "MemberTransfer") {
-      const conversation_id = Payload.Content.Id
-      const agentInfo = extractAgentInfo(Payload.Content, {})
-      const new_agent = agentInfo.name
-      const new_agent_id = agentInfo.id
-
-      await DatabaseService.updateConversationAgent(conversation_id, new_agent, new_agent_id)
-      console.log(
-        `✅ Transferência processada - Conversa: ${conversation_id}, Novo agente: ${new_agent} (ID: ${new_agent_id})`,
-      )
-      return NextResponse.json({
-        success: true,
-        message: "Transferência processada",
-        event_type: Type,
-        conversation_id,
-        new_agent,
-        new_agent_id,
-        event_id: EventId,
-      })
-    }
-
-    console.log(`ℹ️ Evento recebido mas não processado: ${Type}`)
+    console.log(`ℹ️ Evento não processado: ${Type}`)
     return NextResponse.json({
       success: true,
       message: `Evento ${Type} recebido mas não processado`,
@@ -277,7 +123,7 @@ export async function POST(request: NextRequest) {
       event_id: EventId,
     })
   } catch (error) {
-    console.error("❌ Erro ao processar webhook Umbler:", error)
+    console.error("❌ Erro geral no webhook:", error)
     return NextResponse.json(
       {
         error: "Erro interno do servidor",
@@ -292,14 +138,6 @@ export async function GET() {
   return NextResponse.json({
     message: "Webhook endpoint da Umbler está funcionando",
     timestamp: new Date().toISOString(),
-    expected_format: {
-      Type: "Message | ChatClosed | MemberTransfer",
-      EventDate: "2024-02-07T18:44:01.3135533Z",
-      Payload: {
-        Type: "Chat",
-        Content: "BasicChatModel object",
-      },
-      EventId: "ZcPPcWpimiD3EiER",
-    },
+    status: "active",
   })
 }
