@@ -410,6 +410,92 @@ function detectSiteCustomer(messageText: string, chatData: UmblerChatData): bool
   }
 }
 
+function isWithinBusinessHours(date: Date): boolean {
+  const hour = date.getHours()
+  const dayOfWeek = date.getDay() // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+
+  // Business hours: Monday to Friday, 8:00 to 18:00
+  const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5
+  const isBusinessHour = hour >= 8 && hour < 18
+
+  return isWeekday && isBusinessHour
+}
+
+function calculateBusinessHoursResponseTime(customerMessageTime: Date, agentResponseTime: Date): number {
+  console.log("⏰ === CALCULANDO TEMPO DE RESPOSTA COM HORÁRIO COMERCIAL ===")
+
+  let totalBusinessSeconds = 0
+  const currentTime = new Date(customerMessageTime)
+  const endTime = new Date(agentResponseTime)
+
+  console.log(`📅 Mensagem do cliente: ${customerMessageTime.toLocaleString("pt-BR")}`)
+  console.log(`📅 Resposta do agente: ${agentResponseTime.toLocaleString("pt-BR")}`)
+
+  // If customer message is outside business hours, move to next business hour
+  if (!isWithinBusinessHours(currentTime)) {
+    console.log("⚠️ Mensagem do cliente fora do horário comercial")
+
+    // Move to next business day 8:00 AM if needed
+    while (!isWithinBusinessHours(currentTime)) {
+      currentTime.setMinutes(currentTime.getMinutes() + 1)
+
+      // If we've moved to a new day, set to 8:00 AM
+      if (currentTime.getHours() < 8) {
+        currentTime.setHours(8, 0, 0, 0)
+      }
+
+      // If it's weekend, move to Monday
+      if (currentTime.getDay() === 0) {
+        // Sunday
+        currentTime.setDate(currentTime.getDate() + 1) // Monday
+        currentTime.setHours(8, 0, 0, 0)
+      } else if (currentTime.getDay() === 6) {
+        // Saturday
+        currentTime.setDate(currentTime.getDate() + 2) // Monday
+        currentTime.setHours(8, 0, 0, 0)
+      }
+
+      // If after 18:00, move to next day 8:00 AM
+      if (currentTime.getHours() >= 18) {
+        currentTime.setDate(currentTime.getDate() + 1)
+        currentTime.setHours(8, 0, 0, 0)
+      }
+    }
+
+    console.log(`📅 Início da contagem ajustado para: ${currentTime.toLocaleString("pt-BR")}`)
+  }
+
+  // Calculate time only during business hours
+  while (currentTime < endTime) {
+    if (isWithinBusinessHours(currentTime)) {
+      totalBusinessSeconds++
+    }
+
+    currentTime.setSeconds(currentTime.getSeconds() + 1)
+
+    // Skip to next business day if we hit end of business hours
+    if (currentTime.getHours() >= 18) {
+      currentTime.setDate(currentTime.getDate() + 1)
+      currentTime.setHours(8, 0, 0, 0)
+
+      // Skip weekends
+      if (currentTime.getDay() === 6) {
+        // Saturday
+        currentTime.setDate(currentTime.getDate() + 2) // Monday
+      } else if (currentTime.getDay() === 0) {
+        // Sunday
+        currentTime.setDate(currentTime.getDate() + 1) // Monday
+      }
+    }
+  }
+
+  console.log(
+    `⏱️ Tempo de resposta em horário comercial: ${totalBusinessSeconds}s (${Math.floor(totalBusinessSeconds / 60)}min ${totalBusinessSeconds % 60}s)`,
+  )
+
+  return totalBusinessSeconds
+}
+
 export async function POST(request: NextRequest) {
   try {
     if (!process.env.DATABASE_URL) {
@@ -546,7 +632,7 @@ export async function POST(request: NextRequest) {
           if (lastCustomerMessage) {
             const customerMessageTime = new Date(lastCustomerMessage.timestamp)
             const agentResponseTime = new Date(EventDate)
-            const responseTimeSeconds = Math.floor((agentResponseTime.getTime() - customerMessageTime.getTime()) / 1000)
+            const responseTimeSeconds = calculateBusinessHoursResponseTime(customerMessageTime, agentResponseTime)
 
             console.log(`📊 Última mensagem do cliente: ${lastCustomerMessage.message_text.substring(0, 50)}...`)
             console.log(`📊 Tempo da mensagem do cliente: ${customerMessageTime.toISOString()}`)
