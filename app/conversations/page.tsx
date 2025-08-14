@@ -331,7 +331,13 @@ export default function AllConversationsPage() {
               </div>
             </div>
 
-            <AgentPerformance selectedAgentFromFilter={selectedAgent} />
+            <AgentPerformance
+              selectedAgentFromFilter={selectedAgent}
+              dateFilters={{
+                selectedDate,
+                selectedTimeRange,
+              }}
+            />
           </div>
 
           {/* Filtros Avançados */}

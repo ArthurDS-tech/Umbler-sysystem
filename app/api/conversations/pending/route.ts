@@ -28,13 +28,29 @@ export async function GET(request: Request) {
             lm.timestamp as last_message_time,
             lm.sender_name as last_sender,
             lm.message_text as last_message_text,
-            EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 as wait_time_minutes
+            EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 as wait_time_minutes,
+            EXTRACT(HOUR FROM lm.timestamp AT TIME ZONE 'America/Sao_Paulo') as message_hour,
+            EXTRACT(DOW FROM lm.timestamp AT TIME ZONE 'America/Sao_Paulo') as message_dow
           FROM conversations c
           JOIN last_messages lm ON c.conversation_id = lm.conversation_id
           WHERE lm.sender_type = 'customer' 
           AND c.status = 'active'
           AND EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 >= ${minWaitTime}
           AND c.agent_name = ${agentName}
+          -- Filter out messages outside business hours (8:00-18:00)
+          AND EXTRACT(HOUR FROM lm.timestamp AT TIME ZONE 'America/Sao_Paulo') >= 8
+          AND EXTRACT(HOUR FROM lm.timestamp AT TIME ZONE 'America/Sao_Paulo') < 18
+          -- Filter out weekends (Saturday=6, Sunday=0)
+          AND EXTRACT(DOW FROM lm.timestamp AT TIME ZONE 'America/Sao_Paulo') BETWEEN 1 AND 5
+          -- Filter out conversations older than 4 hours (240 minutes)
+          AND EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 <= 240
+          -- Filter out system/bot messages
+          AND lm.message_text NOT LIKE '*%*'
+          AND lm.message_text NOT LIKE '%Etiqueta adicionada%'
+          AND lm.message_text NOT LIKE '%Bem-vindo%'
+          AND lm.message_text NOT LIKE '%horário de atendimento%'
+          AND lm.message_text NOT LIKE '%🕒%'
+          AND lm.message_text NOT LIKE '%Chat finalizado%'
         )
         SELECT * FROM pending_conversations
         ORDER BY wait_time_minutes DESC
@@ -57,12 +73,28 @@ export async function GET(request: Request) {
             lm.timestamp as last_message_time,
             lm.sender_name as last_sender,
             lm.message_text as last_message_text,
-            EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 as wait_time_minutes
+            EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 as wait_time_minutes,
+            EXTRACT(HOUR FROM lm.timestamp AT TIME ZONE 'America/Sao_Paulo') as message_hour,
+            EXTRACT(DOW FROM lm.timestamp AT TIME ZONE 'America/Sao_Paulo') as message_dow
           FROM conversations c
           JOIN last_messages lm ON c.conversation_id = lm.conversation_id
           WHERE lm.sender_type = 'customer' 
           AND c.status = 'active'
           AND EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 >= ${minWaitTime}
+          -- Filter out messages outside business hours (8:00-18:00)
+          AND EXTRACT(HOUR FROM lm.timestamp AT TIME ZONE 'America/Sao_Paulo') >= 8
+          AND EXTRACT(HOUR FROM lm.timestamp AT TIME ZONE 'America/Sao_Paulo') < 18
+          -- Filter out weekends (Saturday=6, Sunday=0)
+          AND EXTRACT(DOW FROM lm.timestamp AT TIME ZONE 'America/Sao_Paulo') BETWEEN 1 AND 5
+          -- Filter out conversations older than 4 hours (240 minutes)
+          AND EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 <= 240
+          -- Filter out system/bot messages
+          AND lm.message_text NOT LIKE '*%*'
+          AND lm.message_text NOT LIKE '%Etiqueta adicionada%'
+          AND lm.message_text NOT LIKE '%Bem-vindo%'
+          AND lm.message_text NOT LIKE '%horário de atendimento%'
+          AND lm.message_text NOT LIKE '%🕒%'
+          AND lm.message_text NOT LIKE '%Chat finalizado%'
         )
         SELECT * FROM pending_conversations
         ORDER BY wait_time_minutes DESC

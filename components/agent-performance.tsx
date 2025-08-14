@@ -45,6 +45,10 @@ interface AgentPerformanceDetails {
 
 interface AgentPerformanceProps {
   selectedAgentFromFilter?: string
+  dateFilters?: {
+    selectedDate?: string
+    selectedTimeRange?: string
+  }
 }
 
 const REAL_ATTENDANTS = [
@@ -112,7 +116,7 @@ function calculateWaitTime(lastMessageTime: string): {
   return { minutes, formatted, category }
 }
 
-export function AgentPerformance({ selectedAgentFromFilter }: AgentPerformanceProps) {
+export function AgentPerformance({ selectedAgentFromFilter, dateFilters }: AgentPerformanceProps) {
   const [agents, setAgents] = useState<AgentMetrics[]>([])
   const [selectedAgent, setSelectedAgent] = useState<string>("")
   const [agentDetails, setAgentDetails] = useState<AgentPerformanceDetails | null>(null)
@@ -131,7 +135,16 @@ export function AgentPerformance({ selectedAgentFromFilter }: AgentPerformancePr
   useEffect(() => {
     async function fetchAgents() {
       try {
-        const response = await fetch("/api/metrics")
+        const params = new URLSearchParams()
+        if (dateFilters?.selectedDate) {
+          params.append("date", dateFilters.selectedDate)
+        }
+        if (dateFilters?.selectedTimeRange) {
+          params.append("timeRange", dateFilters.selectedTimeRange)
+        }
+
+        const url = `/api/metrics${params.toString() ? `?${params.toString()}` : ""}`
+        const response = await fetch(url)
         const data = await response.json()
         setAgents(data.agents || [])
       } catch (error) {
@@ -145,7 +158,7 @@ export function AgentPerformance({ selectedAgentFromFilter }: AgentPerformancePr
     const interval = setInterval(fetchAgents, 30000)
 
     return () => clearInterval(interval)
-  }, [])
+  }, [dateFilters])
 
   useEffect(() => {
     async function fetchAgentDetails() {
@@ -156,7 +169,16 @@ export function AgentPerformance({ selectedAgentFromFilter }: AgentPerformancePr
 
       setDetailsLoading(true)
       try {
-        const response = await fetch(`/api/agents/${encodeURIComponent(selectedAgent)}/performance`)
+        const params = new URLSearchParams()
+        if (dateFilters?.selectedDate) {
+          params.append("date", dateFilters.selectedDate)
+        }
+        if (dateFilters?.selectedTimeRange) {
+          params.append("timeRange", dateFilters.selectedTimeRange)
+        }
+
+        const url = `/api/agents/${encodeURIComponent(selectedAgent)}/performance${params.toString() ? `?${params.toString()}` : ""}`
+        const response = await fetch(url)
         const data = await response.json()
         if (data && !Array.isArray(data.pending_conversations)) {
           data.pending_conversations = []
@@ -172,16 +194,26 @@ export function AgentPerformance({ selectedAgentFromFilter }: AgentPerformancePr
 
     fetchAgentDetails()
     if (selectedAgent) {
-      const interval = setInterval(fetchAgentDetails, 15000) // Update more frequently for selected agent
+      const interval = setInterval(fetchAgentDetails, 15000)
       return () => clearInterval(interval)
     }
-  }, [selectedAgent])
+  }, [selectedAgent, dateFilters])
 
   useEffect(() => {
     if (selectedAgentFromFilter !== undefined) {
       setSelectedAgent(selectedAgentFromFilter)
     }
   }, [selectedAgentFromFilter])
+
+  if (!selectedAgent && !selectedAgentFromFilter) {
+    return (
+      <div className="text-center py-8 text-gray-500">
+        <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
+        <p className="text-lg font-medium mb-2">Selecione um atendente no filtro acima</p>
+        <p className="text-sm">para visualizar suas métricas de performance</p>
+      </div>
+    )
+  }
 
   if (loading) {
     return (
@@ -228,65 +260,89 @@ export function AgentPerformance({ selectedAgentFromFilter }: AgentPerformancePr
 
   return (
     <div className="space-y-6">
-      <div className="space-y-4 max-h-96 overflow-y-auto">
-        {filteredAgents.map((agent, index) => (
-          <div
-            key={agent.agent_name}
-            className={`border rounded-lg p-4 cursor-pointer transition-all ${
-              selectedAgent === agent.agent_name ? "border-blue-500 bg-blue-50" : "hover:shadow-md"
-            }`}
-            onClick={() => setSelectedAgent(selectedAgent === agent.agent_name ? "" : agent.agent_name)}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <User className="h-4 w-4" />
-                <span className="font-medium">{agent.agent_name}</span>
-                {index === 0 && (
-                  <Badge variant="default" className="text-xs">
-                    Melhor
-                  </Badge>
-                )}
-                {selectedAgent === agent.agent_name && (
-                  <Badge variant="outline" className="text-xs">
-                    Selecionado
-                  </Badge>
-                )}
+      {!selectedAgentFromFilter && (
+        <div className="space-y-4 max-h-96 overflow-y-auto">
+          {filteredAgents.map((agent, index) => (
+            <div
+              key={agent.agent_name}
+              className={`border rounded-lg p-4 cursor-pointer transition-all ${
+                selectedAgent === agent.agent_name ? "border-blue-500 bg-blue-50" : "hover:shadow-md"
+              }`}
+              onClick={() => {
+                try {
+                  setSelectedAgent(selectedAgent === agent.agent_name ? "" : agent.agent_name)
+                } catch (error) {
+                  console.error("Erro ao selecionar agente:", error)
+                }
+              }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  <span className="font-medium">{agent.agent_name}</span>
+                  {index === 0 && (
+                    <Badge variant="default" className="text-xs">
+                      Melhor
+                    </Badge>
+                  )}
+                  {selectedAgent === agent.agent_name && (
+                    <Badge variant="outline" className="text-xs">
+                      Selecionado
+                    </Badge>
+                  )}
+                </div>
+                <Badge className={getResponseTimeBadgeColor(agent.avg_response_time)} variant="secondary">
+                  {formatResponseTime(Math.round(agent.avg_response_time))}
+                </Badge>
               </div>
-              <Badge className={getResponseTimeBadgeColor(agent.avg_response_time)} variant="secondary">
-                {formatResponseTime(Math.round(agent.avg_response_time))}
-              </Badge>
-            </div>
 
-            <div className="space-y-2 mb-3">
-              <div className="flex justify-between text-xs text-gray-600">
-                <span>Tempo de resposta</span>
-                <span>{formatResponseTime(Math.round(agent.avg_response_time))}</span>
+              <div className="space-y-2 mb-3">
+                <div className="flex justify-between text-xs text-gray-600">
+                  <span>Tempo de resposta</span>
+                  <span>{formatResponseTime(Math.round(agent.avg_response_time))}</span>
+                </div>
+                <Progress value={(agent.avg_response_time / maxResponseTime) * 100} className="h-2" />
               </div>
-              <Progress value={(agent.avg_response_time / maxResponseTime) * 100} className="h-2" />
-            </div>
 
-            <div className="grid grid-cols-2 gap-4 text-xs text-gray-600">
-              <div className="flex items-center gap-1">
-                <MessageSquare className="h-3 w-3" />
-                <span>{agent.total_conversations} conversas</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                <span>{agent.response_count} respostas</span>
+              <div className="grid grid-cols-2 gap-4 text-xs text-gray-600">
+                <div className="flex items-center gap-1">
+                  <MessageSquare className="h-3 w-3" />
+                  <span>{agent.total_conversations} conversas</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  <span>{agent.response_count} respostas</span>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {selectedAgent && (
+      {(selectedAgent || selectedAgentFromFilter) && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 mb-4">
-            <h3 className="text-lg font-semibold">Performance Completa de {selectedAgent}</h3>
+            <h3 className="text-lg font-semibold">
+              Performance Completa de {selectedAgent || selectedAgentFromFilter}
+            </h3>
             {detailsLoading && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500" />}
+            {(dateFilters?.selectedDate || dateFilters?.selectedTimeRange) && (
+              <div className="flex gap-2">
+                {dateFilters.selectedDate && (
+                  <Badge variant="outline" className="text-xs">
+                    Data: {new Date(dateFilters.selectedDate).toLocaleDateString("pt-BR")}
+                  </Badge>
+                )}
+                {dateFilters.selectedTimeRange && (
+                  <Badge variant="outline" className="text-xs">
+                    Período: {dateFilters.selectedTimeRange}
+                  </Badge>
+                )}
+              </div>
+            )}
           </div>
 
-          {agentDetails && (
+          {agentDetails && agentDetails.agent_stats && (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Card>
@@ -297,15 +353,15 @@ export function AgentPerformance({ selectedAgentFromFilter }: AgentPerformancePr
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{agentDetails.agent_stats.total_conversations}</div>
+                    <div className="text-2xl font-bold">{agentDetails.agent_stats?.total_conversations || 0}</div>
                     <div className="text-xs text-gray-600 flex items-center gap-2">
                       <span className="flex items-center gap-1">
                         <CheckCircle className="h-3 w-3 text-green-500" />
-                        {agentDetails.agent_stats.active_conversations} ativas
+                        {agentDetails.agent_stats?.active_conversations || 0} ativas
                       </span>
                       <span className="flex items-center gap-1">
                         <XCircle className="h-3 w-3 text-gray-500" />
-                        {agentDetails.agent_stats.closed_conversations} fechadas
+                        {agentDetails.agent_stats?.closed_conversations || 0} fechadas
                       </span>
                     </div>
                   </CardContent>
@@ -319,15 +375,15 @@ export function AgentPerformance({ selectedAgentFromFilter }: AgentPerformancePr
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{agentDetails.agent_stats.total_messages || 0}</div>
+                    <div className="text-2xl font-bold">{agentDetails.agent_stats?.total_messages || 0}</div>
                     <div className="text-xs text-gray-600 flex items-center gap-2">
                       <span className="flex items-center gap-1">
                         <Phone className="h-3 w-3 text-blue-500" />
-                        {agentDetails.agent_stats.customer_messages || 0} recebidas
+                        {agentDetails.agent_stats?.customer_messages || 0} recebidas
                       </span>
                       <span className="flex items-center gap-1">
                         <MessageSquare className="h-3 w-3 text-green-500" />
-                        {agentDetails.agent_stats.agent_messages || 0} enviadas
+                        {agentDetails.agent_stats?.agent_messages || 0} enviadas
                       </span>
                     </div>
                   </CardContent>
@@ -341,7 +397,7 @@ export function AgentPerformance({ selectedAgentFromFilter }: AgentPerformancePr
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{agentDetails.agent_stats.site_customers || 0}</div>
+                    <div className="text-2xl font-bold">{agentDetails.agent_stats?.site_customers || 0}</div>
                     <div className="text-xs text-gray-600">Clientes vindos do site</div>
                   </CardContent>
                 </Card>
@@ -350,22 +406,22 @@ export function AgentPerformance({ selectedAgentFromFilter }: AgentPerformancePr
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <Clock className="h-4 w-4 text-orange-500" />
-                      Tempo Médio
+                      Tempo Médio de Resposta
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
-                      {formatResponseTime(Math.round(agentDetails.agent_stats.avg_response_time))}
+                      {formatResponseTime(Math.round(agentDetails.agent_stats?.avg_response_time || 0))}
                     </div>
                     <Badge
-                      className={`${getResponseTimeBadgeColor(agentDetails.agent_stats.avg_response_time)} text-white`}
+                      className={`${getResponseTimeBadgeColor(agentDetails.agent_stats?.avg_response_time || 0)} text-white`}
                       variant="secondary"
                     >
-                      {agentDetails.agent_stats.avg_response_time <= 30
+                      {(agentDetails.agent_stats?.avg_response_time || 0) <= 30
                         ? "⚡ Excelente"
-                        : agentDetails.agent_stats.avg_response_time <= 120
+                        : (agentDetails.agent_stats?.avg_response_time || 0) <= 120
                           ? "✅ Bom"
-                          : agentDetails.agent_stats.avg_response_time <= 300
+                          : (agentDetails.agent_stats?.avg_response_time || 0) <= 300
                             ? "⚠️ Regular"
                             : "🔴 Lento"}
                     </Badge>
@@ -406,7 +462,6 @@ export function AgentPerformance({ selectedAgentFromFilter }: AgentPerformancePr
                 </CardContent>
               </Card>
 
-              {/* Pending Conversations Details */}
               {safePendingConversations.length > 0 && (
                 <Card>
                   <CardHeader>

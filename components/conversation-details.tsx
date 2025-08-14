@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { formatResponseTime, getResponseTimeBadgeColor } from "@/lib/utils"
-import { Clock, MessageSquare, User, Headphones, RefreshCw } from "lucide-react"
+import { Clock, MessageSquare, User, Headphones } from "lucide-react"
 
 interface Message {
   id: number
@@ -31,6 +31,66 @@ interface ConversationData {
 
 interface ConversationDetailsProps {
   conversationId: string
+}
+
+function calculateResponseTimes(messages: Message[]) {
+  const responseTimes: number[] = []
+  let lastCustomerMessageTime: Date | null = null
+
+  // Lista de atendentes para identificação correta
+  const ATTENDANTS = [
+    "Ester Ramos",
+    "Janaina",
+    "Ketlen",
+    "Kenia",
+    "Janara",
+    "Bruna Machado",
+    "Cristiane Santos Sousa",
+    "Davi Souza",
+    "DVA",
+    "Fpolis",
+    "Lojas",
+  ]
+
+  // Função para verificar se está no horário comercial (8:00-18:00)
+  function isBusinessHours(date: Date): boolean {
+    const hour = date.getHours()
+    const day = date.getDay() // 0 = domingo, 6 = sábado
+    return day >= 1 && day <= 5 && hour >= 8 && hour < 18
+  }
+
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i]
+    const messageTime = new Date(message.timestamp)
+
+    // Identificar se é mensagem do cliente ou atendente
+    const isCustomerMessage =
+      message.sender_type === "customer" ||
+      (message.sender_name && !ATTENDANTS.some((att) => message.sender_name?.toLowerCase().includes(att.toLowerCase())))
+
+    const isAgentMessage =
+      message.sender_type === "agent" ||
+      (message.sender_name && ATTENDANTS.some((att) => message.sender_name?.toLowerCase().includes(att.toLowerCase())))
+
+    if (isCustomerMessage && isBusinessHours(messageTime)) {
+      // Atualizar última mensagem do cliente
+      lastCustomerMessageTime = messageTime
+    } else if (isAgentMessage && lastCustomerMessageTime && isBusinessHours(messageTime)) {
+      // Calcular tempo de resposta
+      const responseTimeMs = messageTime.getTime() - lastCustomerMessageTime.getTime()
+      const responseTimeSeconds = Math.floor(responseTimeMs / 1000)
+
+      // Só considerar se for um tempo razoável (máximo 4 horas = 14400 segundos)
+      if (responseTimeSeconds > 0 && responseTimeSeconds <= 14400) {
+        responseTimes.push(responseTimeSeconds)
+      }
+
+      // Reset para próximo cálculo
+      lastCustomerMessageTime = null
+    }
+  }
+
+  return responseTimes
 }
 
 export function ConversationDetails({ conversationId }: ConversationDetailsProps) {
@@ -85,15 +145,58 @@ export function ConversationDetails({ conversationId }: ConversationDetailsProps
     )
   }
 
+  const calculatedResponseTimes = calculateResponseTimes(data.messages)
   const avgResponseTime =
-    data.response_times.length > 0
-      ? data.response_times.reduce((sum, rt) => sum + (rt.response_time_seconds || 0), 0) / data.response_times.length
+    calculatedResponseTimes.length > 0
+      ? calculatedResponseTimes.reduce((sum, time) => sum + time, 0) / calculatedResponseTimes.length
       : 0
+
+  const customerMessages = data.messages.filter((m) => {
+    const ATTENDANTS = [
+      "Ester Ramos",
+      "Janaina",
+      "Ketlen",
+      "Kenia",
+      "Janara",
+      "Bruna Machado",
+      "Cristiane Santos Sousa",
+      "Davi Souza",
+      "DVA",
+      "Fpolis",
+      "Lojas",
+    ]
+
+    return (
+      m.sender_type === "customer" ||
+      (m.sender_name && !ATTENDANTS.some((att) => m.sender_name?.toLowerCase().includes(att.toLowerCase())))
+    )
+  })
+
+  const agentMessages = data.messages.filter((m) => {
+    const ATTENDANTS = [
+      "Ester Ramos",
+      "Janaina",
+      "Ketlen",
+      "Kenia",
+      "Janara",
+      "Bruna Machado",
+      "Cristiane Santos Sousa",
+      "Davi Souza",
+      "DVA",
+      "Fpolis",
+      "Lojas",
+    ]
+
+    return (
+      m.sender_type === "agent" ||
+      (m.sender_name && ATTENDANTS.some((att) => m.sender_name?.toLowerCase().includes(att.toLowerCase())))
+    )
+  })
 
   return (
     <div className="space-y-6">
       {/* Estatísticas da Conversa */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -104,13 +207,9 @@ export function ConversationDetails({ conversationId }: ConversationDetailsProps
           <CardContent>
             <div className="text-2xl font-bold text-gray-900">{data.messages.length}</div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-blue-600 font-medium">
-                {data.messages.filter((m) => m.sender_type === "customer").length} do cliente
-              </span>
+              <span className="text-blue-600 font-medium">{customerMessages.length} do cliente</span>
               {" • "}
-              <span className="text-green-600 font-medium">
-                {data.messages.filter((m) => m.sender_type === "agent").length} do agente
-              </span>
+              <span className="text-green-600 font-medium">{agentMessages.length} do agente</span>
             </p>
           </CardContent>
         </Card>
@@ -136,19 +235,9 @@ export function ConversationDetails({ conversationId }: ConversationDetailsProps
                     ? "⚠️ Regular"
                     : "🔴 Lento"}
             </Badge>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:shadow-md transition-shadow">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <RefreshCw className="h-4 w-4 text-purple-500" />
-              Respostas Medidas
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{data.response_times.length}</div>
-            <p className="text-xs text-muted-foreground">Tempos de resposta calculados automaticamente</p>
+            <p className="text-xs text-muted-foreground mt-2">
+              {calculatedResponseTimes.length} respostas medidas • Horário comercial: 8h-18h
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -161,48 +250,69 @@ export function ConversationDetails({ conversationId }: ConversationDetailsProps
             Timeline de Mensagens
           </CardTitle>
           <CardDescription>
-            Histórico completo da conversa com tempo de resposta para cada mensagem do cliente
+            Histórico completo da conversa com identificação automática de cliente vs atendente
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-6 max-h-96 overflow-y-auto pr-2">
             {data.messages.map((message, index) => {
+              const ATTENDANTS = [
+                "Ester Ramos",
+                "Janaina",
+                "Ketlen",
+                "Kenia",
+                "Janara",
+                "Bruna Machado",
+                "Cristiane Santos Sousa",
+                "Davi Souza",
+                "DVA",
+                "Fpolis",
+                "Lojas",
+              ]
+
+              const isAgentMessage =
+                message.sender_type === "agent" ||
+                (message.sender_name &&
+                  ATTENDANTS.some((att) => message.sender_name?.toLowerCase().includes(att.toLowerCase())))
+
+              const displaySenderType = isAgentMessage ? "agent" : "customer"
+
               return (
                 <div
                   key={message.id}
-                  className={`flex gap-4 ${message.sender_type === "agent" ? "flex-row-reverse" : ""}`}
+                  className={`flex gap-4 ${displaySenderType === "agent" ? "flex-row-reverse" : ""}`}
                 >
                   <div
                     className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center shadow-sm ${
-                      message.sender_type === "customer"
+                      displaySenderType === "customer"
                         ? "bg-gradient-to-r from-blue-400 to-blue-500 text-white"
                         : "bg-gradient-to-r from-green-400 to-green-500 text-white"
                     }`}
                   >
-                    {message.sender_type === "customer" ? (
+                    {displaySenderType === "customer" ? (
                       <User className="h-6 w-6" />
                     ) : (
                       <Headphones className="h-6 w-6" />
                     )}
                   </div>
 
-                  <div className={`flex-1 max-w-md ${message.sender_type === "agent" ? "text-right" : ""}`}>
-                    <div className={`mb-2 ${message.sender_type === "agent" ? "text-right" : ""}`}>
+                  <div className={`flex-1 max-w-md ${displaySenderType === "agent" ? "text-right" : ""}`}>
+                    <div className={`mb-2 ${displaySenderType === "agent" ? "text-right" : ""}`}>
                       <Badge
                         className={`text-sm font-semibold px-3 py-1 ${
-                          message.sender_type === "customer"
+                          displaySenderType === "customer"
                             ? "bg-blue-500 hover:bg-blue-600 text-white"
                             : "bg-green-500 hover:bg-green-600 text-white"
                         }`}
                       >
-                        {message.sender_type === "customer" ? "👤 CLIENTE" : "🎧 ATENDENTE"}
+                        {displaySenderType === "customer" ? "👤 CLIENTE" : "🎧 ATENDENTE"}
                         {message.sender_name && ` • ${message.sender_name}`}
                       </Badge>
                     </div>
 
                     <div
                       className={`inline-block max-w-full px-4 py-3 rounded-2xl shadow-sm border ${
-                        message.sender_type === "customer"
+                        displaySenderType === "customer"
                           ? "bg-white border-blue-200 text-gray-900 rounded-bl-sm"
                           : "bg-gradient-to-r from-green-500 to-green-600 text-white rounded-br-sm border-green-400"
                       }`}
@@ -212,9 +322,7 @@ export function ConversationDetails({ conversationId }: ConversationDetailsProps
                       </p>
                     </div>
 
-                    <div
-                      className={`mt-2 text-xs text-gray-500 ${message.sender_type === "agent" ? "text-right" : ""}`}
-                    >
+                    <div className={`mt-2 text-xs text-gray-500 ${displaySenderType === "agent" ? "text-right" : ""}`}>
                       <span className="font-medium bg-gray-100 px-2 py-1 rounded">
                         {new Date(message.timestamp).toLocaleString("pt-BR", {
                           day: "2-digit",
@@ -224,7 +332,7 @@ export function ConversationDetails({ conversationId }: ConversationDetailsProps
                           second: "2-digit",
                         })}
                       </span>
-                      {message.sender_type === "customer" && message.response_time_seconds && (
+                      {displaySenderType === "customer" && message.response_time_seconds && (
                         <>
                           <span className="mx-2">•</span>
                           <Badge

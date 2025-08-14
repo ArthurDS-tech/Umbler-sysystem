@@ -82,42 +82,91 @@ function detectSystemMessage(messageText: string): boolean {
 
   const lowerMessage = messageText.toLowerCase().trim()
 
-  // System/Bot message patterns
   const systemPatterns = [
     // Messages starting with * (bot formatting)
     /^\*/,
+
+    /^💬/, // "💬 Para começarmos, qual o seu nome, por favor?"
+    /^📝/, // "📝 Selecione o número do serviço que você precisa"
+    /^🎯/,
+    /^📋/,
+    /^📞/,
+    /^📧/,
+    /^🔔/,
+
+    /adicionar manualmente etiqueta/i,
+    /instrução para o atendente/i,
+    /sistema automatico/i,
+    /mensagem automática/i,
+
+    /para começarmos,?\s*qual/i,
+    /selecione o número do serviço/i,
+    /escolha uma das opções/i,
+    /digite o número correspondente/i,
+    /estamos prontos para ajudar/i,
+    /nossa equipe irá te atender/i,
+    /como podemos te ajudar/i,
+    /conte um pouco mais sobre/i,
+    /você escolheu.*assuntos/i,
+    /entendido!.*você escolheu/i,
+
+    /.*😊.*💙/, // "Entendido! 😊 ... prontamente! 💙"
+    /.*💙.*😊/,
+    /.*🎯.*📝/,
+    /.*📞.*💬/,
+
     // Tag system messages
     /etiqueta\s+(adicionada|removida)/i,
     /tag\s+(adicionada|removida)/i,
+
     // Welcome messages
     /bem-vindo.*ao\s+despachante/i,
     /bem-vinda.*ao\s+despachante/i,
+
     // Business hours messages
     /fora\s+do\s+nosso\s+hor[aá]rio/i,
     /hor[aá]rio\s+de\s+atendimento/i,
     /atendemos\s+de\s+segunda/i,
+
     // Automated responses
     /podemos\s+deixar\s+suas\s+informa[çc][õo]es/i,
     /qual\s+[eé]\s+o\s+seu\s+nome/i,
     /como\s+poderemos\s+te\s+ajudar/i,
     /escolha\s+uma\s+op[çc][aã]o/i,
     /daremos\s+prioridade/i,
+
     // Process messages
     /vamos\s+agilizar\s+o\s+processo/i,
     /por\s+favor.*me\s+informe/i,
+
     // System emojis and formatting
     /^🕒/,
     /^👉/,
     /💙.*despachante/i,
     /🚗💨/,
     /🚙💨/,
+
+    /estamos.*prontos.*para.*ajudar/i,
+    /nossa.*equipe.*irá.*atender/i,
+    /prontamente.*💙/i,
+    /atendimento.*personalizado/i,
   ]
 
-  return systemPatterns.some((pattern) => pattern.test(messageText))
+  const isSystemMessage = systemPatterns.some((pattern) => pattern.test(messageText))
+
+  if (isSystemMessage) {
+    console.log(`🤖 SISTEMA/BOT detectado por padrão: "${messageText.substring(0, 80)}..."`)
+  }
+
+  return isSystemMessage
 }
 
 function identifySenderType(lastMessage: UmblerMessage, chatData: UmblerChatData): "customer" | "agent" | "system" {
   console.log("🔍 === IDENTIFICANDO TIPO DE REMETENTE ===")
+  console.log("📝 Mensagem:", lastMessage.Content?.substring(0, 100))
+  console.log("🆔 Sender ID:", lastMessage.Sender?.Id)
+  console.log("👤 Sender Name:", lastMessage.Sender?.Name)
+  console.log("📊 Source:", lastMessage.Source)
 
   const messageText = lastMessage.Content || ""
 
@@ -126,23 +175,29 @@ function identifySenderType(lastMessage: UmblerMessage, chatData: UmblerChatData
     return "system"
   }
 
-  // Priority 1: Check if sender has an ID that matches our attendant mapping
   if (lastMessage.Sender?.Id && ATTENDANT_ID_MAP[lastMessage.Sender.Id]) {
-    console.log(
-      `✅ Mensagem do ATENDENTE identificada por ID: ${ATTENDANT_ID_MAP[lastMessage.Sender.Id]} (${lastMessage.Sender.Id})`,
-    )
+    const attendantName = ATTENDANT_ID_MAP[lastMessage.Sender.Id]
+    console.log(`✅ Mensagem do ATENDENTE identificada por ID: ${attendantName} (${lastMessage.Sender.Id})`)
     return "agent"
   }
 
-  // Priority 2: Check LastOrganizationMember ID
+  if (lastMessage.Sender?.Name) {
+    const senderName = lastMessage.Sender.Name.trim()
+    const matchingAttendant = Object.values(ATTENDANT_ID_MAP).find(
+      (name) => name.toLowerCase() === senderName.toLowerCase(),
+    )
+    if (matchingAttendant) {
+      console.log(`✅ Mensagem do ATENDENTE identificada por NOME: ${matchingAttendant}`)
+      return "agent"
+    }
+  }
+
   if (chatData.LastOrganizationMember?.Id && ATTENDANT_ID_MAP[chatData.LastOrganizationMember.Id]) {
-    console.log(
-      `✅ Mensagem do ATENDENTE identificada por LastOrganizationMember: ${ATTENDANT_ID_MAP[chatData.LastOrganizationMember.Id]}`,
-    )
+    const attendantName = ATTENDANT_ID_MAP[chatData.LastOrganizationMember.Id]
+    console.log(`✅ Mensagem do ATENDENTE identificada por LastOrganizationMember: ${attendantName}`)
     return "agent"
   }
 
-  // Priority 3: Check Source field
   const sourceValue = (lastMessage.Source || "").toLowerCase().trim()
   if (sourceValue === "agent" || sourceValue === "member" || sourceValue === "organizationmember") {
     console.log(`✅ Mensagem do ATENDENTE identificada por Source: ${sourceValue}`)
@@ -154,13 +209,11 @@ function identifySenderType(lastMessage: UmblerMessage, chatData: UmblerChatData
     return "customer"
   }
 
-  // Priority 4: Check if source contains member/agent keywords
   if (sourceValue.includes("member") || sourceValue.includes("agent")) {
     console.log(`✅ Mensagem do ATENDENTE identificada por palavra-chave no Source: ${sourceValue}`)
     return "agent"
   }
 
-  // Default: assume customer message
   console.log(`⚠️ Tipo não identificado claramente, assumindo CLIENTE. Source: "${sourceValue}"`)
   return "customer"
 }
@@ -542,6 +595,17 @@ export async function POST(request: NextRequest) {
       const customer_phone = chatData.Contact?.PhoneNumber || chatData.Contact?.Phone || null
       const customer_email = chatData.Contact?.Email || null
 
+      console.log("🔍 === DEBUG ESPECÍFICO PARA BRUNA MACHADO ===")
+      console.log("📝 Mensagem completa:", JSON.stringify(lastMessage, null, 2))
+      console.log("👤 Nome do sender:", lastMessage.Sender?.Name)
+      console.log("🆔 ID do sender:", lastMessage.Sender?.Id)
+      console.log("📊 Source:", lastMessage.Source)
+
+      if (lastMessage.Sender?.Name?.includes("Bruna Machado") || lastMessage.Sender?.Id === "ZzUQwM9nj2l-H5hc") {
+        console.log("🎯 === BRUNA MACHADO DETECTADA ===")
+        console.log("✅ Esta mensagem é da Bruna Machado!")
+      }
+
       const sender_type = identifySenderType(lastMessage, chatData)
 
       const agentInfo = extractAgentInfo(chatData, lastMessage)
@@ -632,15 +696,19 @@ export async function POST(request: NextRequest) {
           if (lastCustomerMessage) {
             const customerMessageTime = new Date(lastCustomerMessage.timestamp)
             const agentResponseTime = new Date(EventDate)
+
+            console.log(`📊 Última mensagem do cliente: "${lastCustomerMessage.message_text.substring(0, 50)}..."`)
+            console.log(`📊 Horário da mensagem do cliente: ${customerMessageTime.toISOString()}`)
+            console.log(`📊 Horário da resposta do atendente: ${agentResponseTime.toISOString()}`)
+
+            const simpleTimeDiff = Math.floor((agentResponseTime.getTime() - customerMessageTime.getTime()) / 1000)
+            console.log(
+              `📊 Diferença simples de tempo: ${simpleTimeDiff}s (${Math.floor(simpleTimeDiff / 60)}min ${simpleTimeDiff % 60}s)`,
+            )
+
             const responseTimeSeconds = calculateBusinessHoursResponseTime(customerMessageTime, agentResponseTime)
 
-            console.log(`📊 Última mensagem do cliente: ${lastCustomerMessage.message_text.substring(0, 50)}...`)
-            console.log(`📊 Tempo da mensagem do cliente: ${customerMessageTime.toISOString()}`)
-            console.log(`📊 Tempo da resposta do agente: ${agentResponseTime.toISOString()}`)
-            console.log(`📊 Tempo de resposta calculado: ${responseTimeSeconds}s`)
-
             if (responseTimeSeconds > 0 && responseTimeSeconds < 86400) {
-              // Max 24 hours to avoid errors
               await DatabaseService.saveResponseTime({
                 conversation_id,
                 customer_message_id: lastCustomerMessage.message_id,
@@ -651,7 +719,7 @@ export async function POST(request: NextRequest) {
               })
 
               console.log(
-                `✅ Tempo de resposta salvo: ${Math.floor(responseTimeSeconds / 60)}min ${responseTimeSeconds % 60}s`,
+                `✅ TEMPO DE RESPOSTA SALVO PARA BRUNA MACHADO: ${Math.floor(responseTimeSeconds / 60)}min ${responseTimeSeconds % 60}s`,
               )
             } else {
               console.log(`⚠️ Tempo de resposta inválido: ${responseTimeSeconds}s - não salvo`)
@@ -659,6 +727,10 @@ export async function POST(request: NextRequest) {
           } else {
             console.log("⚠️ Nenhuma mensagem anterior do cliente encontrada para calcular tempo de resposta")
           }
+        } else {
+          console.log(
+            `ℹ️ Não calculando tempo de resposta - sender_type: ${sender_type}, IsPrivate: ${lastMessage.IsPrivate}`,
+          )
         }
       } else {
         console.log("🤖 Mensagem do sistema não salva no banco - apenas processada para tags")
