@@ -9,41 +9,65 @@ export async function GET(request: Request) {
     const { neon } = await import("@neondatabase/serverless")
     const sql = neon(process.env.DATABASE_URL!)
 
-    let query = `
-      WITH last_messages AS (
-        SELECT DISTINCT ON (conversation_id) 
-          conversation_id,
-          sender_type,
-          timestamp,
-          sender_name,
-          message_text
-        FROM messages 
-        ORDER BY conversation_id, timestamp DESC
-      ),
-      pending_conversations AS (
-        SELECT 
-          c.*,
-          lm.timestamp as last_message_time,
-          lm.sender_name as last_sender,
-          lm.message_text as last_message_text,
-          EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 as wait_time_minutes
-        FROM conversations c
-        JOIN last_messages lm ON c.conversation_id = lm.conversation_id
-        WHERE lm.sender_type = 'customer' 
-        AND c.status = 'active'
-        AND EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 >= $1
-    `
-
-    const params: any[] = [minWaitTime]
-
+    let result
     if (agentName) {
-      query += ` AND c.agent_name = $2`
-      params.push(agentName)
+      result = await sql`
+        WITH last_messages AS (
+          SELECT DISTINCT ON (conversation_id) 
+            conversation_id,
+            sender_type,
+            timestamp,
+            sender_name,
+            message_text
+          FROM messages 
+          ORDER BY conversation_id, timestamp DESC
+        ),
+        pending_conversations AS (
+          SELECT 
+            c.*,
+            lm.timestamp as last_message_time,
+            lm.sender_name as last_sender,
+            lm.message_text as last_message_text,
+            EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 as wait_time_minutes
+          FROM conversations c
+          JOIN last_messages lm ON c.conversation_id = lm.conversation_id
+          WHERE lm.sender_type = 'customer' 
+          AND c.status = 'active'
+          AND EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 >= ${minWaitTime}
+          AND c.agent_name = ${agentName}
+        )
+        SELECT * FROM pending_conversations
+        ORDER BY wait_time_minutes DESC
+      `
+    } else {
+      result = await sql`
+        WITH last_messages AS (
+          SELECT DISTINCT ON (conversation_id) 
+            conversation_id,
+            sender_type,
+            timestamp,
+            sender_name,
+            message_text
+          FROM messages 
+          ORDER BY conversation_id, timestamp DESC
+        ),
+        pending_conversations AS (
+          SELECT 
+            c.*,
+            lm.timestamp as last_message_time,
+            lm.sender_name as last_sender,
+            lm.message_text as last_message_text,
+            EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 as wait_time_minutes
+          FROM conversations c
+          JOIN last_messages lm ON c.conversation_id = lm.conversation_id
+          WHERE lm.sender_type = 'customer' 
+          AND c.status = 'active'
+          AND EXTRACT(EPOCH FROM (NOW() - lm.timestamp))/60 >= ${minWaitTime}
+        )
+        SELECT * FROM pending_conversations
+        ORDER BY wait_time_minutes DESC
+      `
     }
-
-    query += ` ORDER BY wait_time_minutes DESC`
-
-    const result = await sql(query, params)
 
     const pendingConversations = result.map((conv: any) => ({
       ...conv,

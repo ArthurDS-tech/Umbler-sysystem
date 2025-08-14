@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Globe, Users, CheckCircle, Clock } from "lucide-react"
+import { Globe, Users, CheckCircle, Clock, DollarSign, MousePointer, Eye } from "lucide-react"
 
 interface SiteCustomersStats {
   totalSiteCustomers: number
@@ -104,6 +104,38 @@ export function SiteCustomersCard() {
               <span className="font-semibold" style={{ color: "#0BC4D9" }}>
                 {stats?.avgResponseTimeSeconds ? formatTime(stats.avgResponseTimeSeconds) : "N/A"}
               </span>
+            </div>
+
+            <div className="mt-4 pt-3 border-t">
+              <h4 className="text-sm font-medium mb-3" style={{ color: "#3E403F" }}>
+                Métricas Google Ads (Jul - Ago)
+              </h4>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-sm" style={{ color: "#3E403F" }}>
+                    <DollarSign className="h-4 w-4" style={{ color: "#FF6B6B" }} />
+                    Valor Investido
+                  </span>
+                  <span className="font-semibold text-gray-400">--</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-sm" style={{ color: "#3E403F" }}>
+                    <MousePointer className="h-4 w-4" style={{ color: "#4ECDC4" }} />
+                    Cliques
+                  </span>
+                  <span className="font-semibold text-gray-400">--</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-sm" style={{ color: "#3E403F" }}>
+                    <Eye className="h-4 w-4" style={{ color: "#45B7D1" }} />
+                    Impressões
+                  </span>
+                  <span className="font-semibold text-gray-400">--</span>
+                </div>
+              </div>
             </div>
           </div>
 

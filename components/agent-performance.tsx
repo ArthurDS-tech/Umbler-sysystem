@@ -43,6 +43,56 @@ interface AgentPerformanceDetails {
   recent_conversations: any[]
 }
 
+interface AgentPerformanceProps {
+  selectedAgentFromFilter?: string
+}
+
+const REAL_ATTENDANTS = [
+  "Adrielli Saturnino",
+  "Amanda Arruda",
+  "ANA PAULA GOMES LOPES",
+  "Ana Paula Prates",
+  "Andresa Oliveira",
+  "Andreyna Jamilly",
+  "Arthur Schuster",
+  "Beatriz Padilha",
+  "Bruna Machado",
+  "Bruna Rosângela dos Santos",
+  "Cristiane Santos Sousa",
+  "Ester Ramos",
+  "Eticléia Kletenberg",
+  "Evylin Costa",
+  "Fernando Marcelino",
+  "Francilaine Rosa de Oliveira",
+  "Helena Alves Iung",
+  "Henry Fernandes dos Santos",
+  "Isabella Reis TAcone",
+  "Isabelle de Oliveira Guedes",
+  "Janaina Dos Santos",
+  "Janara Luana Copeti Teixeira",
+  "Josieli",
+  "JULIA PERES 💙",
+  "Karen Letícia Nunes de Ligório",
+  "Karol 💙",
+  "Karol Machado",
+  "kenia silva veiga",
+  "Lauren Silva",
+  "Leticia Sodre Martins",
+  "Lisiane Dalla Valle",
+  "Manoela Bernardi",
+  "Manuella Machado Cardoso",
+  "Maria Julia Luiz de Sousa",
+  "Micheli Castilhos",
+  "Micheli.M 💙",
+  "Mirian Lemos",
+  "Paola Davila Sagaz",
+  "Patricia Pereira",
+  "Pedro Moura",
+  "Robson",
+  "Sarah Vieira",
+  "Wanessa Garcia",
+]
+
 function calculateWaitTime(lastMessageTime: string): {
   minutes: number
   formatted: string
@@ -62,7 +112,7 @@ function calculateWaitTime(lastMessageTime: string): {
   return { minutes, formatted, category }
 }
 
-export function AgentPerformance() {
+export function AgentPerformance({ selectedAgentFromFilter }: AgentPerformanceProps) {
   const [agents, setAgents] = useState<AgentMetrics[]>([])
   const [selectedAgent, setSelectedAgent] = useState<string>("")
   const [agentDetails, setAgentDetails] = useState<AgentPerformanceDetails | null>(null)
@@ -127,6 +177,12 @@ export function AgentPerformance() {
     }
   }, [selectedAgent])
 
+  useEffect(() => {
+    if (selectedAgentFromFilter !== undefined) {
+      setSelectedAgent(selectedAgentFromFilter)
+    }
+  }, [selectedAgentFromFilter])
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -151,6 +207,8 @@ export function AgentPerformance() {
 
   const maxResponseTime = Math.max(...agents.map((a) => a.avg_response_time))
 
+  const filteredAgents = agents.filter((agent) => REAL_ATTENDANTS.includes(agent.agent_name))
+
   const safePendingConversations = Array.isArray(agentDetails?.pending_conversations)
     ? agentDetails.pending_conversations.map((conv) => {
         if (conv.last_customer_message_time) {
@@ -171,7 +229,7 @@ export function AgentPerformance() {
   return (
     <div className="space-y-6">
       <div className="space-y-4 max-h-96 overflow-y-auto">
-        {agents.map((agent, index) => (
+        {filteredAgents.map((agent, index) => (
           <div
             key={agent.agent_name}
             className={`border rounded-lg p-4 cursor-pointer transition-all ${

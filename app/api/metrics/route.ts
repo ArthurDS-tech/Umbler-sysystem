@@ -7,6 +7,14 @@ export async function GET() {
     return NextResponse.json(metrics)
   } catch (error) {
     console.error("Erro ao buscar métricas:", error)
-    return NextResponse.json({ error: "Erro interno do servidor" }, { status: 500 })
+    return NextResponse.json({
+      total_conversations: 0,
+      active_conversations: 0,
+      total_messages: 0,
+      total_response_times: 0,
+      overall_avg_response_time: 0,
+      agents: [],
+      recent_activity: [],
+    })
   }
 }

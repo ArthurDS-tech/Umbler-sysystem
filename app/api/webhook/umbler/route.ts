@@ -77,8 +77,54 @@ interface UmblerChatData {
   Tags?: string[]
 }
 
-function identifySenderType(lastMessage: UmblerMessage, chatData: UmblerChatData): "customer" | "agent" {
+function detectSystemMessage(messageText: string): boolean {
+  if (!messageText || typeof messageText !== "string") return false
+
+  const lowerMessage = messageText.toLowerCase().trim()
+
+  // System/Bot message patterns
+  const systemPatterns = [
+    // Messages starting with * (bot formatting)
+    /^\*/,
+    // Tag system messages
+    /etiqueta\s+(adicionada|removida)/i,
+    /tag\s+(adicionada|removida)/i,
+    // Welcome messages
+    /bem-vindo.*ao\s+despachante/i,
+    /bem-vinda.*ao\s+despachante/i,
+    // Business hours messages
+    /fora\s+do\s+nosso\s+hor[aá]rio/i,
+    /hor[aá]rio\s+de\s+atendimento/i,
+    /atendemos\s+de\s+segunda/i,
+    // Automated responses
+    /podemos\s+deixar\s+suas\s+informa[çc][õo]es/i,
+    /qual\s+[eé]\s+o\s+seu\s+nome/i,
+    /como\s+poderemos\s+te\s+ajudar/i,
+    /escolha\s+uma\s+op[çc][aã]o/i,
+    /daremos\s+prioridade/i,
+    // Process messages
+    /vamos\s+agilizar\s+o\s+processo/i,
+    /por\s+favor.*me\s+informe/i,
+    // System emojis and formatting
+    /^🕒/,
+    /^👉/,
+    /💙.*despachante/i,
+    /🚗💨/,
+    /🚙💨/,
+  ]
+
+  return systemPatterns.some((pattern) => pattern.test(messageText))
+}
+
+function identifySenderType(lastMessage: UmblerMessage, chatData: UmblerChatData): "customer" | "agent" | "system" {
   console.log("🔍 === IDENTIFICANDO TIPO DE REMETENTE ===")
+
+  const messageText = lastMessage.Content || ""
+
+  if (detectSystemMessage(messageText)) {
+    console.log(`🤖 Mensagem do SISTEMA/BOT detectada: "${messageText.substring(0, 50)}..."`)
+    return "system"
+  }
 
   // Priority 1: Check if sender has an ID that matches our attendant mapping
   if (lastMessage.Sender?.Id && ATTENDANT_ID_MAP[lastMessage.Sender.Id]) {
@@ -420,6 +466,8 @@ export async function POST(request: NextRequest) {
       if (sender_type === "agent") {
         // For agent messages: sender is the agent who sent the message
         sender_name = agent_name
+      } else if (sender_type === "system") {
+        sender_name = "Sistema"
       } else {
         // For customer messages: sender is the customer
         sender_name = customer_name
@@ -477,53 +525,57 @@ export async function POST(request: NextRequest) {
       const message_type = lastMessage.IsPrivate ? "private_note" : "message"
       const timestamp = new Date(EventDate)
 
-      const savedMessage = await DatabaseService.createMessage({
-        conversation_id,
-        message_id,
-        sender_type: sender_type as "customer" | "agent",
-        sender_name,
-        message_text,
-        message_type,
-        timestamp,
-      })
+      if (sender_type !== "system") {
+        const savedMessage = await DatabaseService.createMessage({
+          conversation_id,
+          message_id,
+          sender_type: sender_type as "customer" | "agent",
+          sender_name,
+          message_text,
+          message_type,
+          timestamp,
+        })
 
-      console.log("💾 Mensagem salva no banco:", savedMessage ? "✅ Sucesso" : "❌ Falhou")
+        console.log("💾 Mensagem salva no banco:", savedMessage ? "✅ Sucesso" : "❌ Falhou")
 
-      if (sender_type === "agent" && !lastMessage.IsPrivate) {
-        console.log("⏱️ === CALCULANDO TEMPO DE RESPOSTA MELHORADO ===")
+        if (sender_type === "agent" && !lastMessage.IsPrivate) {
+          console.log("⏱️ === CALCULANDO TEMPO DE RESPOSTA MELHORADO ===")
 
-        const lastCustomerMessage = await DatabaseService.getLastCustomerMessage(conversation_id)
+          const lastCustomerMessage = await DatabaseService.getLastCustomerMessage(conversation_id)
 
-        if (lastCustomerMessage) {
-          const customerMessageTime = new Date(lastCustomerMessage.timestamp)
-          const agentResponseTime = new Date(EventDate)
-          const responseTimeSeconds = Math.floor((agentResponseTime.getTime() - customerMessageTime.getTime()) / 1000)
+          if (lastCustomerMessage) {
+            const customerMessageTime = new Date(lastCustomerMessage.timestamp)
+            const agentResponseTime = new Date(EventDate)
+            const responseTimeSeconds = Math.floor((agentResponseTime.getTime() - customerMessageTime.getTime()) / 1000)
 
-          console.log(`📊 Última mensagem do cliente: ${lastCustomerMessage.message_text.substring(0, 50)}...`)
-          console.log(`📊 Tempo da mensagem do cliente: ${customerMessageTime.toISOString()}`)
-          console.log(`📊 Tempo da resposta do agente: ${agentResponseTime.toISOString()}`)
-          console.log(`📊 Tempo de resposta calculado: ${responseTimeSeconds}s`)
+            console.log(`📊 Última mensagem do cliente: ${lastCustomerMessage.message_text.substring(0, 50)}...`)
+            console.log(`📊 Tempo da mensagem do cliente: ${customerMessageTime.toISOString()}`)
+            console.log(`📊 Tempo da resposta do agente: ${agentResponseTime.toISOString()}`)
+            console.log(`📊 Tempo de resposta calculado: ${responseTimeSeconds}s`)
 
-          if (responseTimeSeconds > 0 && responseTimeSeconds < 86400) {
-            // Max 24 hours to avoid errors
-            await DatabaseService.saveResponseTime({
-              conversation_id,
-              customer_message_id: lastCustomerMessage.message_id,
-              agent_message_id: message_id,
-              response_time_seconds: responseTimeSeconds,
-              customer_message_time: customerMessageTime,
-              agent_response_time: agentResponseTime,
-            })
+            if (responseTimeSeconds > 0 && responseTimeSeconds < 86400) {
+              // Max 24 hours to avoid errors
+              await DatabaseService.saveResponseTime({
+                conversation_id,
+                customer_message_id: lastCustomerMessage.message_id,
+                agent_message_id: message_id,
+                response_time_seconds: responseTimeSeconds,
+                customer_message_time: customerMessageTime,
+                agent_response_time: agentResponseTime,
+              })
 
-            console.log(
-              `✅ Tempo de resposta salvo: ${Math.floor(responseTimeSeconds / 60)}min ${responseTimeSeconds % 60}s`,
-            )
+              console.log(
+                `✅ Tempo de resposta salvo: ${Math.floor(responseTimeSeconds / 60)}min ${responseTimeSeconds % 60}s`,
+              )
+            } else {
+              console.log(`⚠️ Tempo de resposta inválido: ${responseTimeSeconds}s - não salvo`)
+            }
           } else {
-            console.log(`⚠️ Tempo de resposta inválido: ${responseTimeSeconds}s - não salvo`)
+            console.log("⚠️ Nenhuma mensagem anterior do cliente encontrada para calcular tempo de resposta")
           }
-        } else {
-          console.log("⚠️ Nenhuma mensagem anterior do cliente encontrada para calcular tempo de resposta")
         }
+      } else {
+        console.log("🤖 Mensagem do sistema não salva no banco - apenas processada para tags")
       }
 
       return NextResponse.json({

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { formatResponseTime } from "@/lib/utils"
 import { Eye, Clock, MessageSquare, User, Search, ArrowLeft, Phone, Mail, BarChart3 } from "lucide-react"
 import Link from "next/link"
+import { AgentPerformance } from "@/components/agent-performance"
 
 interface ConversationMetrics {
   conversation_id: string
@@ -265,29 +266,6 @@ export default function AllConversationsPage() {
     }
   }
 
-  const getAgentStats = () => {
-    if (!selectedAgent) return null
-
-    const agentConversations = conversations.filter((conv) => conv.agent_name === selectedAgent)
-    if (agentConversations.length === 0) return null
-
-    const totalResponseTimes = agentConversations.map((conv) => conv.avg_response_time || 0).filter((time) => time > 0)
-
-    if (totalResponseTimes.length === 0) return null
-
-    const avgResponseTime = totalResponseTimes.reduce((sum, time) => sum + time, 0) / totalResponseTimes.length
-    const { category, color } = getResponseTimeCategory(avgResponseTime)
-
-    return {
-      totalConversations: agentConversations.length,
-      avgResponseTime,
-      category,
-      color,
-    }
-  }
-
-  const agentStats = getAgentStats()
-
   if (loading) {
     return (
       <div className="min-h-screen" style={{ backgroundColor: "#F2F2F2" }}>
@@ -334,6 +312,7 @@ export default function AllConversationsPage() {
             </div>
           </div>
 
+          {/* Agent Performance Component */}
           <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm mb-6">
             <div className="flex items-center gap-3 mb-4">
               <div
@@ -344,61 +323,15 @@ export default function AllConversationsPage() {
               </div>
               <div>
                 <h3 className="text-lg font-semibold" style={{ color: "#3E403F" }}>
-                  Performance do Atendente
+                  PerformanceRanking por tempo médio de resposta
                 </h3>
                 <p className="text-sm" style={{ color: "#3E403F", opacity: 0.7 }}>
-                  {selectedAgent
-                    ? `Estatísticas de tempo de resposta: ${selectedAgent}`
-                    : "Selecione um atendente no filtro para ver as métricas"}
+                  Ranking dos atendentes por performance e métricas detalhadas
                 </p>
               </div>
             </div>
 
-            {selectedAgent && agentStats ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="text-center p-4 rounded-lg" style={{ backgroundColor: "#F2F2F2" }}>
-                  <div className="text-2xl font-bold mb-1" style={{ color: "#3E403F" }}>
-                    {agentStats.totalConversations}
-                  </div>
-                  <div className="text-sm" style={{ color: "#3E403F", opacity: 0.7 }}>
-                    Total de Conversas
-                  </div>
-                </div>
-
-                <div className="text-center p-4 rounded-lg" style={{ backgroundColor: "#F2F2F2" }}>
-                  <div className="text-2xl font-bold mb-1" style={{ color: "#3E403F" }}>
-                    {formatResponseTime(Math.round(agentStats.avgResponseTime))}
-                  </div>
-                  <div className="text-sm" style={{ color: "#3E403F", opacity: 0.7 }}>
-                    Tempo Médio de Resposta
-                  </div>
-                </div>
-
-                <div className="text-center p-4 rounded-lg" style={{ backgroundColor: "#F2F2F2" }}>
-                  <div
-                    className="inline-block px-3 py-1 rounded-lg text-sm font-medium text-white mb-1"
-                    style={{ backgroundColor: agentStats.color }}
-                  >
-                    {agentStats.category}
-                  </div>
-                  <div className="text-sm" style={{ color: "#3E403F", opacity: 0.7 }}>
-                    Classificação
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <div
-                  className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center"
-                  style={{ backgroundColor: "#F2F2F2" }}
-                >
-                  <User className="h-8 w-8" style={{ color: "#3E403F", opacity: 0.5 }} />
-                </div>
-                <p className="text-sm" style={{ color: "#3E403F", opacity: 0.7 }}>
-                  Selecione um atendente no filtro acima para visualizar suas métricas de performance
-                </p>
-              </div>
-            )}
+            <AgentPerformance selectedAgentFromFilter={selectedAgent} />
           </div>
 
           {/* Filtros Avançados */}
@@ -450,6 +383,7 @@ export default function AllConversationsPage() {
                 </select>
               </div>
 
+              {/* Tempo de Resposta */}
               <div className="space-y-2">
                 <label className="text-sm font-medium" style={{ color: "#3E403F" }}>
                   Tempo de Resposta
@@ -470,6 +404,7 @@ export default function AllConversationsPage() {
                 </select>
               </div>
 
+              {/* Período */}
               <div className="space-y-2">
                 <label className="text-sm font-medium" style={{ color: "#3E403F" }}>
                   Período
@@ -512,6 +447,7 @@ export default function AllConversationsPage() {
                 </select>
               </div>
 
+              {/* Data Específica */}
               <div className="space-y-2">
                 <label className="text-sm font-medium" style={{ color: "#3E403F" }}>
                   Data Específica
