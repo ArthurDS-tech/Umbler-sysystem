@@ -77,6 +77,48 @@ interface UmblerChatData {
   Tags?: string[]
 }
 
+function identifySenderType(lastMessage: UmblerMessage, chatData: UmblerChatData): "customer" | "agent" {
+  console.log("🔍 === IDENTIFICANDO TIPO DE REMETENTE ===")
+
+  // Priority 1: Check if sender has an ID that matches our attendant mapping
+  if (lastMessage.Sender?.Id && ATTENDANT_ID_MAP[lastMessage.Sender.Id]) {
+    console.log(
+      `✅ Mensagem do ATENDENTE identificada por ID: ${ATTENDANT_ID_MAP[lastMessage.Sender.Id]} (${lastMessage.Sender.Id})`,
+    )
+    return "agent"
+  }
+
+  // Priority 2: Check LastOrganizationMember ID
+  if (chatData.LastOrganizationMember?.Id && ATTENDANT_ID_MAP[chatData.LastOrganizationMember.Id]) {
+    console.log(
+      `✅ Mensagem do ATENDENTE identificada por LastOrganizationMember: ${ATTENDANT_ID_MAP[chatData.LastOrganizationMember.Id]}`,
+    )
+    return "agent"
+  }
+
+  // Priority 3: Check Source field
+  const sourceValue = (lastMessage.Source || "").toLowerCase().trim()
+  if (sourceValue === "agent" || sourceValue === "member" || sourceValue === "organizationmember") {
+    console.log(`✅ Mensagem do ATENDENTE identificada por Source: ${sourceValue}`)
+    return "agent"
+  }
+
+  if (sourceValue === "contact" || sourceValue === "customer") {
+    console.log(`✅ Mensagem do CLIENTE identificada por Source: ${sourceValue}`)
+    return "customer"
+  }
+
+  // Priority 4: Check if source contains member/agent keywords
+  if (sourceValue.includes("member") || sourceValue.includes("agent")) {
+    console.log(`✅ Mensagem do ATENDENTE identificada por palavra-chave no Source: ${sourceValue}`)
+    return "agent"
+  }
+
+  // Default: assume customer message
+  console.log(`⚠️ Tipo não identificado claramente, assumindo CLIENTE. Source: "${sourceValue}"`)
+  return "customer"
+}
+
 function extractAgentInfo(chatData: UmblerChatData, lastMessage: UmblerMessage): { name: string; id: string | null } {
   console.log("🔍 === EXTRACTING AGENT INFO (NAME + ID) ===")
 
@@ -157,12 +199,14 @@ function detectAndProcessTags(messageText: string, conversationId: string, chatD
   const detectedTags: string[] = []
 
   try {
-    // Detect tag addition messages from Umbler system - multiple patterns
+    // Detect tag addition messages from Umbler system - enhanced patterns
     const tagAddedPatterns = [
       /etiqueta adicionada na conversa[:\s]*([^.\n]+)/i,
       /tag adicionada[:\s]*([^.\n]+)/i,
       /adicionada a etiqueta[:\s]*([^.\n]+)/i,
       /nova etiqueta[:\s]*([^.\n]+)/i,
+      /etiqueta[:\s]+([^.\n]+)\s+adicionada/i,
+      /tag[:\s]+([^.\n]+)\s+adicionada/i,
     ]
 
     for (const pattern of tagAddedPatterns) {
@@ -175,12 +219,14 @@ function detectAndProcessTags(messageText: string, conversationId: string, chatD
       }
     }
 
-    // Detect tag removal messages from Umbler system - multiple patterns
+    // Detect tag removal messages from Umbler system - enhanced patterns
     const tagRemovedPatterns = [
       /etiqueta removida da conversa[:\s]*([^.\n]+)/i,
       /tag removida[:\s]*([^.\n]+)/i,
       /removida a etiqueta[:\s]*([^.\n]+)/i,
       /etiqueta exclu[íi]da[:\s]*([^.\n]+)/i,
+      /etiqueta[:\s]+([^.\n]+)\s+removida/i,
+      /tag[:\s]+([^.\n]+)\s+removida/i,
     ]
 
     for (const pattern of tagRemovedPatterns) {
@@ -364,20 +410,7 @@ export async function POST(request: NextRequest) {
       const customer_phone = chatData.Contact?.PhoneNumber || chatData.Contact?.Phone || null
       const customer_email = chatData.Contact?.Email || null
 
-      const sourceValue = (lastMessage.Source || "").toLowerCase().trim()
-      console.log("📊 Source original:", lastMessage.Source)
-      console.log("📊 Source processado:", sourceValue)
-
-      let sender_type: "customer" | "agent"
-      if (sourceValue === "contact" || sourceValue === "customer") {
-        sender_type = "customer"
-      } else if (sourceValue === "agent" || sourceValue === "member" || sourceValue === "organizationmember") {
-        sender_type = "agent"
-      } else {
-        sender_type = sourceValue.includes("member") || sourceValue.includes("agent") ? "agent" : "customer"
-      }
-
-      console.log("📊 sender_type determinado:", sender_type)
+      const sender_type = identifySenderType(lastMessage, chatData)
 
       const agentInfo = extractAgentInfo(chatData, lastMessage)
       const agent_name = agentInfo.name
@@ -457,7 +490,7 @@ export async function POST(request: NextRequest) {
       console.log("💾 Mensagem salva no banco:", savedMessage ? "✅ Sucesso" : "❌ Falhou")
 
       if (sender_type === "agent" && !lastMessage.IsPrivate) {
-        console.log("⏱️ === CALCULANDO TEMPO DE RESPOSTA ===")
+        console.log("⏱️ === CALCULANDO TEMPO DE RESPOSTA MELHORADO ===")
 
         const lastCustomerMessage = await DatabaseService.getLastCustomerMessage(conversation_id)
 
@@ -466,7 +499,13 @@ export async function POST(request: NextRequest) {
           const agentResponseTime = new Date(EventDate)
           const responseTimeSeconds = Math.floor((agentResponseTime.getTime() - customerMessageTime.getTime()) / 1000)
 
-          if (responseTimeSeconds > 0) {
+          console.log(`📊 Última mensagem do cliente: ${lastCustomerMessage.message_text.substring(0, 50)}...`)
+          console.log(`📊 Tempo da mensagem do cliente: ${customerMessageTime.toISOString()}`)
+          console.log(`📊 Tempo da resposta do agente: ${agentResponseTime.toISOString()}`)
+          console.log(`📊 Tempo de resposta calculado: ${responseTimeSeconds}s`)
+
+          if (responseTimeSeconds > 0 && responseTimeSeconds < 86400) {
+            // Max 24 hours to avoid errors
             await DatabaseService.saveResponseTime({
               conversation_id,
               customer_message_id: lastCustomerMessage.message_id,
@@ -479,7 +518,11 @@ export async function POST(request: NextRequest) {
             console.log(
               `✅ Tempo de resposta salvo: ${Math.floor(responseTimeSeconds / 60)}min ${responseTimeSeconds % 60}s`,
             )
+          } else {
+            console.log(`⚠️ Tempo de resposta inválido: ${responseTimeSeconds}s - não salvo`)
           }
+        } else {
+          console.log("⚠️ Nenhuma mensagem anterior do cliente encontrada para calcular tempo de resposta")
         }
       }
 
