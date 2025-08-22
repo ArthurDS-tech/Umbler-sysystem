@@ -1,0 +1,26 @@
+[Unit]
+Description=Sistema de Notificações Internas - Cliente
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=notification
+Group=notification
+WorkingDirectory=/opt/notification-system
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/python3 /opt/notification-system/notification_client.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Configurações de segurança
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/notification-system
+
+[Install]
+WantedBy=multi-user.target

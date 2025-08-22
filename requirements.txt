@@ -1,0 +1,14 @@
+# Sistema de Notificações Internas - Dependências
+# Instale com: pip install -r requirements.txt
+
+# Comunicação WebSocket
+websockets>=11.0.3
+
+# Notificações multiplataforma
+plyer>=2.1.0
+
+# Notificações Windows (opcional, só instala no Windows)
+win10toast>=0.9; sys_platform == "win32"
+
+# Configurações INI
+configparser; python_version < "3.0"
