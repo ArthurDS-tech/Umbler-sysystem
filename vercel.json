@@ -9,13 +9,13 @@
     "NEXT_PUBLIC_WS_URL": "wss://notificacoes-internas.vercel.app"
   },
   "functions": {
-    "pages/api/socket.js": {
-      "runtime": "nodejs18.x"
+    "pages/api/socket.ts": {
+      "maxDuration": 30
     }
   },
   "rewrites": [
     {
-      "source": "/socket.io/(.*)",
+      "source": "/socket.io/:path*",
       "destination": "/api/socket"
     }
   ],
